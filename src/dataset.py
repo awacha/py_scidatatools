@@ -8,6 +8,10 @@ import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.cbook import is_numlike
 import scipy.optimize
+import fitfunction
+
+class DataSetError(StandardError):
+    pass
 
 class DataSet(object):
     """ A general purpose dataset class. It has four special fields: x, y,
@@ -54,22 +58,12 @@ class DataSet(object):
            method. These should be subclasses of Dataset.Transform, and only
            affect plotting and "trimzoomed".
     """
-    class Transform(object):
-        def __init__(self):
-            pass
-        def do_transform(self,x,y,dy=None,dx=None,**kwargs):
-            raise NotImplementedError('Transform is an abstract class. Please subclass it and override the do_transform method.')
-        def __call__(self,*args,**kwargs):
-            return self.do_transform(*args,**kwargs)
-        def xlabel(self,unit=u'1/\xc5'):
-            return u'q (%s)' %unit
-        def ylabel(self,unit=u'1/cm'):
-            return u'y (%s)' % unit
     _xtolerance=1e-9
     _dict=None
     _keytrans={'x':'_x','y':'_y','dx':'_dx','dy':'_dy'}
     _plotaxes=None
     _transform=None
+    _MCErrorPropSteps=100
     def __init__(self,x,y,dy=None,dx=None,**kwargs):
 #    def __init__(self,*args,**kwargs):
 #        print "DataSet.__init__:"
@@ -417,7 +411,7 @@ class DataSet(object):
             self._dict['_dy']=dy
             return self
         else:
-            return self.__class(x,y,dy,dx);
+            return self.__class__(x,y,dy,dx);
     def __array__(self,keys=None):
         """Make a structured numpy array from the current dataset.
         """
@@ -523,7 +517,7 @@ class DataSet(object):
     def evalfunction(self,function,*args,**kwargs):
         x=self._dict['_x']
         y=function(x,*args,**kwargs)
-        if self.MCErrorPropSteps>1 and '_dx' in self._dict.keys():
+        if self._MCErrorPropSteps>1 and '_dx' in self._dict.keys():
             dy=np.zeros_like(x)
             for i in xrange(self.MCErrorPropSteps):
                 dy+=(y-function(x+self._dict['_dx']*np.random.randn(len(x))))**2
@@ -535,115 +529,105 @@ class DataSet(object):
         ret=self.__class__(x,y,dy,dx)
         ret.set_transform(self._transform)
         return ret
-    def plotfitted(self,function,params,dparams,funcinfo):
-        funcinfo=funcinfo.copy() # make a copy so we can update it.
+    def plotfitted(self,function,params,dparams=None,chi2=None,dof=None,funcinfo=None):
+        if funcinfo is not None:
+            funcinfo=funcinfo.copy() # make a copy so we can update it.
+        else:
+            funcinfo={}
+            funcinfo['funcname']='Model function'
+            funcinfo['paramnames']=['parameter #%d'%(i+1) for i in range(len(params))]
         cfitted=self.evalfunction(function,*params)
         if 'plotmethod' not in funcinfo.keys():
             funcinfo['plotmethod']='plot'
-        self.__getattr__(funcinfo['plotmethod']).__call__(linestyle=' ',marker='.',color='b')
-        cfitted.__getattr__(funcinfo['plotmethod']).__call__(linestyle='-',marker='',color='r')
+        self.__getattribute__(funcinfo['plotmethod']).__call__(linestyle=' ',marker='.',color='b')
+        cfitted.__getattribute__(funcinfo['plotmethod']).__call__(linestyle='-',marker='',color='r')
         logtext=u"Function: %s\n"%funcinfo['funcname']
+        logtext=u"Formula: %s\n"%funcinfo['formula']
         logtext+=u"Parameters:\n"
         for i in range(len(params)):
             logtext+=u"    %s : %g +/- %g\n" % (funcinfo['paramnames'][i],
                                                 params[i],dparams[i])
-        chi2=(cfitted._dict['_y']-self._dict['_y'])**2
-                
-        
+        if chi2 is not None:
+            logtext+=u"Reduced chi^2: %g\n"%chi2
+        if dof is not None:
+            logtext+=u"Degrees of freedom: %d\n"%dof
+        if 'logtext' in funcinfo.keys():
+            for i in funcinfo['logtext']:
+                logtext+=u"%s" % i.__call__(self._dict,params,dparams,chi2,dof)
         plt.text(0.95,0.95,logtext,bbox={'facecolor':'white','alpha':0.6,
                                          'edgecolor':'black'},
                  ha='right',va='top',multialignment='left',
                  transform=plt.gca().transAxes)
-        
-            
-    def fit(self,function,parinit,funcinfo=None):
+    def fit(self,function,parinit=None,funcinfo=None,doplot=True,ext_output=False):
+        if isinstance(function,fitfunction.FitFunction):
+            funcinfo=function.funcinfo()
+            if parinit is None:
+                parinit=function.init_arguments(self._dict['_x'],self._dict['_y'])
         #get the initial parameters
         if hasattr(parinit,'__call__'):
             params_initial=parinit(self._dict['_x'],self._dict['_y'])
         else:
             params_initial=parinit
+        x=self._dict['_x']
+        y=self._dict['_y']
         if '_dy' not in self._dict.keys():
-            sigma=None
+            w=np.ones_like(self._dict['_x'])
+            weighting='uniform'
+        elif (self._dict['_dy']==0).sum()>0:
+            idx=self._dict['_dy']==0
+            x=x[idx]
+            y=y[idx]
+            w=np.ones_like(x)
+            weighting='uniform, only points where sigma=0'
         else:
-            sigma=self._dict['_dy']
-        popt,pcov=scipy.optimize.curve_fit(function,self._dict['_x'],params_initial,
-                                           self._dict['_y'],sigma)
-        if funcinfo is not None:
-            self.plotfitted(function,popt,funcinfo)
-        return popt,np.sqrt(np.diag(pcov))
+            w=1/self._dict['_dy']
+            weighting='instrumental'
+        def func(p,x,y,w,f=function):
+            return (f(x,*(p.tolist()))-y)*w
+        p,cov_x,infodict,mesg,ier=scipy.optimize.leastsq(func,params_initial,
+                                                         args=(x,y,w),full_output=1)
+#        if ier>4 or ier<1:
+#            raise DataSetError(mesg)
+        chisquare=(infodict['fvec']**2).sum()
+        degrees_of_freedom=len(self._dict['_x'])-len(p)
+        if cov_x is None:
+            pstd=[np.nan]*len(p)
+        else:
+            pstd=[ np.sqrt(cov_x[i,i]*chisquare/degrees_of_freedom) for i in range(len(p))]
+        sserr=np.sum(((function(x,*(p.tolist()))-y)*w)**2)
+        sstot=np.sum((y-np.mean(y))**2*w**2)
+        r2=1-sserr/sstot
+        if funcinfo is not None and doplot:
+            self.plotfitted(function,p,pstd,chisquare,degrees_of_freedom,funcinfo)
+        if ext_output:
+            infodict['Chi2']=chisquare;
+            infodict['dof']=degrees_of_freedom
+            infodict['mesg']=mesg
+            infodict['ier']=ier
+            infodict['weighting']=weighting
+            infodict['cov_x']=cov_x
+            infodict['R2']=r2
+            return p,pstd,infodict
+        else:            
+            return p,pstd
+    @staticmethod
+    def new_from_file(filename):
+        f=np.loadtxt(filename); # this raises IOError if file cannot be loaded.
+        N=f.shape[0]
+        if N>0:
+            x=f[:,0]
+            dx=None
+            dy=None
+            if f.shape[1]==1: # only one column, x will hold the row numbers
+                y=f[:,0]
+                x=np.arange(f.shape[0],dtype=np.double)
+            if f.shape[1]>1:
+                y=f[:,1]
+            if f.shape[1]>2:
+                dy=f[:,2]
+            if f.shape[1]>3:
+                dx=f[:,3]
+            return DataSet(x,y,dy,dx)
+        else:
+            raise ValueError('File %s does not contain any data points.'%filename)
         
-class TransformGuinier(DataSet.Transform):
-    def __init__(self,qpower=0):
-        self._qpower=qpower
-    def do_transform(self,x,y,dy=None,dx=None,**kwargs):
-        d=kwargs
-        d['x']=np.power(x,2)
-        d['y']=np.log(y*np.power(x,self._qpower))
-        if dy is not None:
-            d['dy']=np.absolute(dy/y)
-        if dx is not None:
-            d['dx']=2*np.absolute(x)*dx
-        return d
-
-class TransformLogLog(DataSet.Transform):
-    def __init__(self,xlog=True,ylog=True):
-        self._xlog=xlog
-        self._ylog=ylog
-    def do_transform(self,x,y,dy=None,dx=None,**kwargs):
-        d=kwargs
-        if self._xlog:
-            d['x']=np.log(x)
-            if dx is not None:
-                d['dx']=np.absolute(dx/x)
-        else:
-            d['x']=np.array(x) # make a copy!
-            if dx is not None:
-                d['dx']=np.array(dx) # make a copy!
-        if self._ylog:
-            d['y']=np.log(y)
-            if dy is not None:
-                d['dy']=np.absolute(dy/y)
-        else:
-            d['y']=np.array(y) # make a copy!
-            if dy is not None:
-                d['dy']=np.array(dy) # make a copy!
-        return d
-
-class TransformPorod(DataSet.Transform):
-    def __init__(self,exponent=4):
-        self._exponent=exponent
-    def do_transform(self,x,y,dy,dx,**kwargs):
-        d=kwargs
-        d['x']=np.power(x,self._exponent)
-        d['y']=np.power(x,self._exponent)*y
-        if dy is not None:
-            d['dy']=np.power(x,self._exponent)*dy
-        if dx is not None:
-            d['dx']=np.power(x,self._exponent-1)*(self._exponent)*dx
-        return d
-
-class TransformShullRoess(DataSet.Transform):
-    def __init__(self,r0):
-        self._r0=r0
-    def do_transform(self,x,y,dy,dx,**kwargs):
-        d=kwargs
-        d['x']=np.log(np.power(x,2)+3/self._r0**2)
-        d['y']=np.log(y)
-        if dy is not None:
-            d['dy']=np.absolute(dy/y)
-        if dx is not None:
-            d['dx']=2*x*dx/(np.power(x,2)+3/self._r0**2)
-        return d
-
-class TransformZimm(DataSet.Transform):
-    def __init__(self):
-        pass
-    def do_transform(self,x,y,dy,dx,**kwargs):
-        d=kwargs
-        d['x']=np.power(x,2)
-        d['y']=1/y
-        if dy is not None:
-            d['dy']=dy/y
-        if dx is not None:
-            d['dx']=2*np.absolute(x)*dx
-        return d
