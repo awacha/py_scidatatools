@@ -465,6 +465,8 @@ class FittingTool(Tk.Toplevel):
             self.rightentry=Tk.LabelEntry(f,label='Right:')
             self.rightentry.grid(row=0,column=1,sticky='NSEW')
             self.rightentry['state']='disabled'
+            b=Tk.Button(f,text='Fetch',command=self.getrange)
+            b.grid(row=0,column=2,sticky='NSEW')
             if dataset is not None:
                 self.loadfile(dataset)
         def loadfile(self,name):
@@ -484,7 +486,7 @@ class FittingTool(Tk.Toplevel):
                 self.filelabel['text']='<internal>'
                 self.dirlabel['text']='<internal>'
             self.npointslabel['text']='%lu'%len(self.dataset.x)
-            if '_dy' in self.dataset.keys():
+            if 'dy' in self.dataset.keys():
                 self.errorbarslabel['text']='Present'
             else:
                 self.errorbarslabel['text']='Absent'
@@ -506,6 +508,14 @@ class FittingTool(Tk.Toplevel):
             return self.dataset.trim(ltrim,rtrim)
         def getfilename(self):
             return self.filename
+        def getrange(self):
+            self.dataset.set_transform(self.winfo_toplevel().gettransform())
+            d1=self.dataset.trimzoomed(axes=self.winfo_toplevel().figure.gca())
+            self.leftentry.entry.delete(0,Tk.END)
+            self.leftentry.entry.insert(0,'%g'%(d1.x.min()))
+            self.rightentry.entry.delete(0,Tk.END)
+            self.rightentry.entry.insert(0,'%g'%(d1.x.max()))
+            del d1
     def __init__(self,*args,**kwargs):
         if 'figure' in kwargs.keys():
             figure=kwargs['figure']

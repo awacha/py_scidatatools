@@ -645,6 +645,38 @@ class FFLorentzian(FitFunction):
 def Fsphere(q,R):
     return 4*np.pi/q**3*(np.sin(q*R)-q*R*np.cos(q*R))
 
+class FFGuinierPorod(FitFunction):
+    name="Guinier-Porod model"
+    formula="I(q) = q>sqrt(3*(-alpha)/2)/Rg ? (A*q^alpha) : (G*exp(-q^2*Rg^2/3))"
+    argument_info=[('A','Scaling'),('alpha','Power-law exponent'),
+                   ('Rg','Radius of gyration')]
+    def __init__(self):
+        FitFunction.__init__(self)
+    def __call__(self,x,A,alpha,Rg):
+        q1=np.sqrt(3*(-alpha)/2.)/Rg
+        y=np.zeros_like(x)
+        G=A*np.exp(-alpha/2.)*np.power(q1,alpha)
+        idxGuinier=x<q1
+        y[idxGuinier]=G*np.exp(-x[idxGuinier]**2*Rg**2/3.)
+        y[-idxGuinier]=A*np.power(x[-idxGuinier],alpha)
+        return y
+
+class FFPorodGuinier(FitFunction):
+    name="Porod-Guinier model"
+    formula="I(q) = q<sqrt(3*(-alpha)/2)/Rg ? (A*q^alpha) : (G*exp(-q^2*Rg^2/3))"
+    argument_info=[('G','Scaling'),('alpha','Power-law exponent'),
+                   ('Rg','Radius of gyration')]
+    def __init__(self):
+        FitFunction.__init__(self)
+    def __call__(self,x,G,alpha,Rg):
+        q1=np.sqrt(3*(-alpha)/2.)/Rg
+        y=np.zeros_like(x)
+        A=G*np.exp(alpha/2.)*np.power(q1,-alpha)
+        idxGuinier=x>q1
+        y[idxGuinier]=G*np.exp(-x[idxGuinier]**2*Rg**2/3.)
+        y[-idxGuinier]=A*np.power(x[-idxGuinier],alpha)
+        return y
+        
 class FFLogNormSpherePopulation(FitFunction):
     name="Scattering intensity of a log-normal sphere population"
     formula="y(x)=A*integral_0^inf (p(r)*F^2(x,r)) dr"

@@ -461,12 +461,13 @@ class DataSet(object):
         for k in self._dict.keys():
             self._dict[k]=self._dict[k][indices]
         return self
-    def trimzoomed(self,inplace=False):
+    def trimzoomed(self,inplace=False,axes=None):
         """Trim dataset according to the current zoom on the last plot.
         
         Inputs:
             inplace: True if the current dataset is to be trimmed. If False,
                 a new instance of the same class is returned.
+            axes: Use this axes instance.
                 
         Notes:
             This method is useful to reduce the dataset to the currently viewed
@@ -477,9 +478,11 @@ class DataSet(object):
             You will get undefined results if the axis has been deleted since
                 the last plot of this instance.
         """
-        if self._plotaxes is None:
-            raise ValueError('No plot axes corresponds to this dataset!')
-        limits=self._plotaxes.axis()
+        if self._plotaxes is not None:
+            axes=self._plotaxes
+        if axes is None:
+            raise ValueError('No plot axes corresponds to this dataset (and no overriding axes found)!')
+        limits=axes.axis()
         indices=(self._plotx>=limits[0])&(self._plotx<=limits[1])&(self._ploty>=limits[2])&(self._ploty<=limits[3])
         newdict={}
         for k in self._dict.keys():
