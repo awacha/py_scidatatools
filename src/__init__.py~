@@ -1,3 +1,0 @@
-__all__=['dataset','fitfunction','fittingtool']
-for a in __all__:
-    exec("from %s import *"%a)

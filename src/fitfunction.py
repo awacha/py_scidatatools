@@ -255,17 +255,11 @@ class FFBilayer3Gauss(FitFunction):
             Rout=R-whead/2
             Rtail=R-(whead+wtail/2)
             Rin=R-(whead+wtail+whead/2)
-            Min=rhohead*4*np.pi/3*(Rin+whead/2)**3-rhohead*4*np.pi/3*(Rin-whead/2)**3
-            Mout=rhohead*4*np.pi/3*(Rout+whead/2)**3-rhohead*4*np.pi/3*(Rout-whead/2)**3
-            Mtail=rhotail*4*np.pi/3*(Rtail+wtail/2)**3-rhotail*4*np.pi/3*(Rtail-wtail/2)**3        
-            Min=1
-            Mout=1
-            Mtail=1
             
-            Fbin=4*np.sqrt(2*np.pi)*thead*rhohead*np.exp(-thead*thead*x*x/2)/x*(thead*thead*x*np.cos(x*Rin)+Rin*np.sin(x*Rin))
-            Fbout=4*np.sqrt(2*np.pi)*thead*rhohead*np.exp(-thead*thead*x*x/2)/x*(thead*thead*x*np.cos(x*Rout)+Rout*np.sin(x*Rout))
-            Fbtail=4*np.sqrt(2*np.pi)*ttail*rhotail*np.exp(-ttail*ttail*x*x/2)/x*(ttail*ttail*x*np.cos(x*Rtail)+Rtail*np.sin(x*Rtail))
-            I+=((Min+Mout+Mtail)*(Fbin/Min+Fbout/Mout+Fbtail/Mtail))**2*weight[i]
+            Fbin=rhohead*FGaussianShell(x,Rin,thead)
+            Fbout=rhohead*FGaussianShell(x,Rout,thead)
+            Fbtail=rhotail*FGaussianShell(x,Rtail,ttail)
+            I+=(Fbin+Fbout+Fbtail)**2*weight[i]
         return I/weight.sum()+bg;
 
 class FFBilayer3Step(FitFunction):
@@ -316,26 +310,26 @@ class FFGaussian(FitFunction):
     def __call__(self,x,A,x0,sigma,B):
         return A*np.exp(-(x-x0)**2/(2*sigma**2))+B
 
-def FGaussianShell(q,R,t):
+def FGaussianShell(q,R,sigma):
     """Scattering factor of a spherical shell with a radial Gaussian el.density profile
     
     Inputs:
         q: q values
         R: radius
-        t: HWHM of the radial Gauss profile
+        sigma: HWHM of the radial Gauss profile
         
     Outputs:
-        the form factor (same format as q), with the convention F(q=0)=1.
+        the form factor (same format as q), with the convention F(q=0)=V
         
     Notes:
         Gradzielski & al (J. Phys. Chem. 99 pp 13232-8)
     """
-    return 4*np.pi*np.sqrt(2*np.pi)*t/q*np.exp(-(q*t)**2/2)*(R*np.sin(q*R)+q*t*t*np.cos(q*R))
+    return 4*np.pi*np.sqrt(2*np.pi)*sigma/q*np.exp(-(q*sigma)**2/2)*(R*np.sin(q*R)+q*sigma**2*np.cos(q*R))
 
 def VGaussianShell(R,t):
     """Volume of a Gaussian Shell
     """
-    return 4*np.pi/3*((R-t*np.sqrt(2*np.pi)/2)**3-(R+t*np.sqrt(2*np.pi)/2)**3)
+    return 4*np.pi*np.sqrt(2*np.pi)*t*(R**2+t**2)
 
 def FGaussianChain(q,Rg):
     """Form factor (sqrt!!) of a Gaussian chain
@@ -394,7 +388,7 @@ def sinxdivx(x):
     y[idxok]=np.sin(x[idxok])/x[idxok]
     return y
 
-class FDecoratedBilayer(FitFunction):
+class FGaussianBilayerExact(FitFunction):
     name="PEG-decorated bilayer, Gauss profiles"
     formula=""
     argument_info=[('A','Scaling'),('R0','Radius'),('dR','HWHM of Radius'),
@@ -412,15 +406,12 @@ class FDecoratedBilayer(FitFunction):
     def __init__(self):
         FitFunction.__init__(self)
     def __call__(self,x,A,R0,dR,NR,rhohead,rhotail,rhoPEG,zhead,zPEG,thead,ttail,tPEG,bg):
-        r=np.linspace(R0-3*dR,R0+3*dR,NR)
+        r=np.linspace(0,R0+3*dR,NR)
         if len(r)==1 or dR==0:
             weight=np.ones_like(r)
         else:
-            weight=np.exp(-(r-R0)**2/(2*dR**2))/np.sqrt(2*np.pi*dR**2)
+            weight=np.exp(-(r-R0)**2/(2*dR**2))
         I=np.zeros_like(x)
-        whead=thead*np.sqrt(2*np.pi)
-        wtail=ttail*np.sqrt(2*np.pi)
-        wPEG=tPEG*np.sqrt(2*np.pi)
         for i in range(len(r)):
             #dimenziok szamolasa
             R=r[i] # aktualis liposzomameret (legkulso sugar, PEG reteget leszamitva)
@@ -431,21 +422,16 @@ class FDecoratedBilayer(FitFunction):
             Rtail=R
             RPEGout=R+zPEG
             RPEGin=R-zPEG
-            Volin=4*np.pi/3*((Rin+whead/2)**3-(Rin-whead/2)**3)
-            Volout=4*np.pi/3*((Rout+whead/2)**3-(Rout-whead/2)**3)
-            Voltail=4*np.pi/3*((Rtail+wtail/2)**3-(Rtail-wtail/2)**3)            
-            VolPEGin=4*np.pi/3*((RPEGin+wPEG/2)**3-(RPEGin-wPEG/2)**3)            
-            VolPEGout=4*np.pi/3*((RPEGout+wPEG/2)**3-(RPEGout-wPEG/2)**3)            
-            Fbin=rhohead*Volin*FGaussianShell(x,Rin,thead)
-            Fbout=rhohead*Volout*FGaussianShell(x,Rout,thead)
-            Fbtail=rhotail*Voltail*FGaussianShell(x,Rtail,ttail)
-            FbPEGin=rhoPEG*VolPEGin*FGaussianShell(x,RPEGin,tPEG)
-            FbPEGout=rhoPEG*VolPEGout*FGaussianShell(x,RPEGout,tPEG)
+            Fbin=rhohead*FGaussianShell(x,Rin,thead)
+            Fbout=rhohead*FGaussianShell(x,Rout,thead)
+            Fbtail=rhotail*FGaussianShell(x,Rtail,ttail)
+            FbPEGin=rhoPEG*FGaussianShell(x,RPEGin,tPEG)
+            FbPEGout=rhoPEG*FGaussianShell(x,RPEGout,tPEG)
             thisI=(Fbin+Fbout+Fbtail+FbPEGin+FbPEGout)**2*weight[i]
             I+=thisI
         return I/weight.sum()*A+bg
         
-class FGaussianPlaneBilayer(FitFunction):
+class FGaussianBilayerPEG(FitFunction):
     name="Gaussian Bilayer with PEG"
     formula="Brzustowicz & Brunger, J. Appl. Cryst. 38 pp 126-31"
     argument_info=[('A','Scaling'),
@@ -470,20 +456,26 @@ class FGaussianPlaneBilayer(FitFunction):
                 I+=(R0+z[k1])*(R0+z[k2])*rho[k1]*rho[k2]*sigma[k1]*sigma[k2]*np.exp(-x**2*(sigma[k1]**2+sigma[k2]**2))*np.cos(x*(z[k1]-z[k2]))
         return A*I/x**2+bg
 
-def FHalfParabola(q,z0,h,w):
-    if w<0:
-        w=-w
-        return -(4*np.pi*h*(2*q**2*w*z0*np.sin(q*(z0-w))-2*q**2*w**2*np.sin(q*(z0-w)) +
-                 6*np.sin(q*(z0-w))-2*q*z0*np.cos(q*(z0-w))+6*q*w*np.cos(q*(z0-w))-
-                 q**2*w**2*np.sin(q*z0)-6*np.sin(q*z0)+q**3*w**2*z0*np.cos(q*z0)+2*q*z0*np.cos(q*z0)))/(q**5*w**2)
-    else:
-        return -(4*np.pi*h*(2*q**2*w*z0*np.sin(q*(z0+w))+2*q**2*w**2*np.sin(q*(z0+w)) -
-                 6*np.sin(q*(z0+w))+2*q*z0*np.cos(q*(z0+w))+6*q*w*np.cos(q*(z0+w))+
-                 q**2*w**2*np.sin(q*z0)+6*np.sin(q*z0)-q**3*w**2*z0*np.cos(q*z0)-2*q*z0*np.cos(q*z0)))/(q**5*w**2)
+def VParabola(q,z0,h,w,zmin,zmax):
+    return 4*np.pi*h*((zmax**3/3.*(1-z0**2/w**2)-zmax**5/(5*w**2)+z0*zmax**4/2/w**2)-
+                      (zmin**3/3.*(1-z0**2/w**2)-zmin**5/(5*w**2)+z0*zmin**4/2/w**2))  
 
-class FFBilayerParabolaPEG(FitFunction):
+def FParabola(q,z0,h,w,zmin,zmax):
+    term1=((w**2-z0**2)*q**2+4*z0*zmin*q**2-3*zmin**2*q**2+6)*np.sin(q*zmin)+((z0**2-w**2)*zmin*q**3+4*z0*q-2*zmin**2*z0*q**3-6*zmin*q+zmin**3*q**3)*np.cos(q*zmin)
+    term2=((w**2-z0**2)*q**2+4*z0*zmax*q**2-3*zmax**2*q**2+6)*np.sin(q*zmax)+((z0**2-w**2)*zmax*q**3+4*z0*q-2*zmax**2*z0*q**3-6*zmax*q+zmax**3*q**3)*np.cos(q*zmax)
+    
+    return 4*np.pi*h/(q**5*w**2)*(term2-term1)
+
+def Frhor(q,rmax,dr,rho):
+    F=np.zeros_like(q)
+    r=np.arange(0,rmax,dr)
+    for i in range(len(q)):
+        F[i]=np.trapz(r**2*rho*sinxdivx(r*q[i]),r)
+    return 4*np.pi*F
+
+class FFBilayerParabolicPEG(FitFunction):
     name="Bilayer from three Gaussians and parabolic PEG"
-    formula=""
+    formula="3 Gaussian Shells and two half parabolae"
     argument_info=[('A','Scaling'),('R0','Radius'),('dR','HWHM of Radius'),
                    ('NR','Number of R points'),
                    ('rhotail','max SLD of tail region'),
@@ -498,24 +490,35 @@ class FFBilayerParabolaPEG(FitFunction):
     def __init__(self):
         FitFunction.__init__(self)
     def __call__(self,x,A,R0,dR,NR,rhotail,rhoPEG,sigmahead,sigmatail,wPEG,zhead,zPEG,bg):
-        r=np.linspace(R0-3*dR,R0+3*dR,NR)
+        r=np.linspace(0,R0+3*dR,NR)
         if len(r)==1 or dR==0:
             weight=np.ones_like(r)
         else:
-            weight=np.exp(-(r-R0)**2/(2*dR**2))/np.sqrt(2*np.pi*dR**2)
+            weight=np.exp(-(r-R0)**2/(2*dR**2))
         I=np.zeros_like(x)
         for i in range(len(r)):
             R=r[i]
-            F=(rhotail*FGaussianShell(x,R,sigmatail)*VGaussianShell(R,sigmatail)+
-              1*FGaussianShell(x,R+zhead,sigmahead)*VGaussianShell(R+zhead,sigmahead)+
-              1*FGaussianShell(x,R-zhead,sigmahead)*VGaussianShell(R-zhead,sigmahead)+
-              FHalfParabola(x,R-zPEG,rhoPEG,-wPEG)+
-              FHalfParabola(x,R+zPEG,rhoPEG,wPEG))
+            F=(rhotail*FGaussianShell(x,R,sigmatail)+
+              1*FGaussianShell(x,R+zhead,sigmahead)+
+              1*FGaussianShell(x,R-zhead,sigmahead)+
+              FParabola(x,R-zPEG,rhoPEG,wPEG,R-zPEG,R)+
+              FParabola(x,R+zPEG,rhoPEG,wPEG,R,R+zPEG))
             I+=F*F*weight[i]
         return A*I/weight.sum()+bg
+    def rhoz(self,rhotail,rhoPEG,sigmahead,sigmatail,wPEG,zhead,zPEG):
+        zmax=zPEG+wPEG
+        z=np.linspace(-zmax,zmax,1000)
+        rho=np.zeros_like(z)
+        rho+=1*np.exp(-(z-zhead)**2/(2.*sigmahead**2))
+        rho+=1*np.exp(-(z+zhead)**2/(2.*sigmahead**2))
+        rho+=rhotail*np.exp(-(z)**2/(2.*sigmatail**2))
+        rho[(z<=-zPEG)&(z>=-zmax)]=rhoPEG*(1-1./wPEG**2*(z[(z<=-zPEG)&(z>=-zmax)]+zPEG)**2)
+        rho[(z>=zPEG)&(z<=zmax)]=rhoPEG*(1-1./wPEG**2*(z[(z>=zPEG)&(z<=zmax)]-zPEG)**2)
+        return z,rho
+        
         
 class FFSSL(FitFunction):
-    name="Stericaly Stabilized Liposome"
+    name="Sterically Stabilized Liposome"
     formula="Castorph et al. Biophys. J. 98(7) 1200-8"
     argument_info=[('A','Scaling'),('R0','Radius'),('dR','HWHM of Radius'),
                    ('NR','Number of R points'),
@@ -577,13 +580,6 @@ class FFSSL(FitFunction):
             # RPEG{in,out} sugaru gomb feluleten nc{in,out}*Felulet darab van.
             Nin=ncin*4*np.pi*RPEGin**2
             Nout=ncout*4*np.pi*RPEGout**2
-            # A liposzoma terfogatai (egy db. R sugaru liposzoma!!!):
-            # a belso fejcsoportnak megfelelo lepcsoprofil terfogata
-            Volin=4*np.pi/3*((Rin+thead/2)**3-(Rin-thead/2)**3)
-            # a kulso fejcsoportnak megfelelo lepcsoprofil terfogata
-            Volout=4*np.pi/3*((Rout+thead/2)**3-(Rout-thead/2)**3)
-            # a szenlancnak megfelelo lepcsoprofil terfogata
-            Voltail=4*np.pi/3*((Rtail+ttail/2)**3-(Rtail-ttail/2)**3)            
             # Egyetlen belso PEG terfogata
             VolPEGin1=4*np.pi/3*Rgin**3
             # Egyetlen kulso PEG terfogata
@@ -593,9 +589,9 @@ class FFSSL(FitFunction):
             ### a kozeghez (viz) kepesti fennmarado elektronsuruseg
             
             # A kettosreteg kulonbozo komponensei
-            Fbin=rhohead*Volin*FGaussianShell(x,Rin,thead)
-            Fbout=rhohead*Volout*FGaussianShell(x,Rout,thead)
-            Fbtail=rhotail*Voltail*FGaussianShell(x,Rtail,ttail)
+            Fbin=rhohead*FGaussianShell(x,Rin,thead)
+            Fbout=rhohead*FGaussianShell(x,Rout,thead)
+            Fbtail=rhotail*FGaussianShell(x,Rtail,ttail)
             #a kettosreteg teljes formafaktora
             Fb=Fbin+Fbout+Fbtail #osszeadva normalizalas nelkul
             #Egyetlen PEG lanc formafaktora a belso retegbol
@@ -648,22 +644,6 @@ def Fsphere(q,R):
 class FFGuinierPorod(FitFunction):
     name="Guinier-Porod model"
     formula="I(q) = q>sqrt(3*(-alpha)/2)/Rg ? (A*q^alpha) : (G*exp(-q^2*Rg^2/3))"
-    argument_info=[('A','Scaling'),('alpha','Power-law exponent'),
-                   ('Rg','Radius of gyration')]
-    def __init__(self):
-        FitFunction.__init__(self)
-    def __call__(self,x,A,alpha,Rg):
-        q1=np.sqrt(3*(-alpha)/2.)/Rg
-        y=np.zeros_like(x)
-        G=A*np.exp(-alpha/2.)*np.power(q1,alpha)
-        idxGuinier=x<q1
-        y[idxGuinier]=G*np.exp(-x[idxGuinier]**2*Rg**2/3.)
-        y[-idxGuinier]=A*np.power(x[-idxGuinier],alpha)
-        return y
-
-class FFPorodGuinier(FitFunction):
-    name="Porod-Guinier model"
-    formula="I(q) = q<sqrt(3*(-alpha)/2)/Rg ? (A*q^alpha) : (G*exp(-q^2*Rg^2/3))"
     argument_info=[('G','Scaling'),('alpha','Power-law exponent'),
                    ('Rg','Radius of gyration')]
     def __init__(self):
@@ -672,9 +652,46 @@ class FFPorodGuinier(FitFunction):
         q1=np.sqrt(3*(-alpha)/2.)/Rg
         y=np.zeros_like(x)
         A=G*np.exp(alpha/2.)*np.power(q1,-alpha)
+        idxGuinier=x<q1
+        y[idxGuinier]=G*np.exp(-x[idxGuinier]**2*Rg**2/3.)
+        y[-idxGuinier]=A*np.power(x[-idxGuinier],alpha)
+        return y
+
+class FFPorodGuinier(FitFunction):
+    name="Porod-Guinier model"
+    formula="I(q) = q<sqrt(3*(-alpha)/2)/Rg ? (A*q^alpha) : (G*exp(-q^2*Rg^2/3))"
+    argument_info=[('A','Scaling'),('alpha','Power-law exponent'),
+                   ('Rg','Radius of gyration')]
+    def __init__(self):
+        FitFunction.__init__(self)
+    def __call__(self,x,A,alpha,Rg):
+        q1=np.sqrt(3*(-alpha)/2.)/Rg
+        y=np.zeros_like(x)
+        G=A*np.exp(-alpha/2.)*np.power(q1,alpha)
         idxGuinier=x>q1
         y[idxGuinier]=G*np.exp(-x[idxGuinier]**2*Rg**2/3.)
         y[-idxGuinier]=A*np.power(x[-idxGuinier],alpha)
+        return y
+
+class FFPorodGuinierPorod(FitFunction):
+    name="Porod-Guinier-Porod model"
+    formula="I(q) = A*q^(alpha) ; G*exp(-q^2*Rg^2/3) ; B*q^beta smoothly joint"
+    argument_info=[('A','Scaling'),('alpha','First power-law exponent'),
+                   ('Rg','Radius of gyration'),('beta','Second power-law exponent')]
+    def __init__(self):
+        FitFunction.__init__(self)
+    def __call__(self,x,A,alpha,Rg,beta):
+        q1=np.sqrt(3*(-alpha)/2.)/Rg
+        q2=np.sqrt(3*(-beta)/2.)/Rg
+        y=np.zeros_like(x)
+        G=A*np.exp(-alpha/2.)*np.power(q1,alpha)
+        B=G*np.exp(beta/2.)*np.power(q2,-beta)
+        idxFirstP=x<q1
+        idxSecondP=x>q2
+        idxGuinier=(-idxFirstP)&(-idxSecondP)
+        y[idxGuinier]=G*np.exp(-x[idxGuinier]**2*Rg**2/3.)
+        y[idxFirstP]=A*np.power(x[idxFirstP],alpha)
+        y[idxSecondP]=B*np.power(x[idxSecondP],beta)
         return y
         
 class FFLogNormSpherePopulation(FitFunction):

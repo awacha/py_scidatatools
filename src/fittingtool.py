@@ -424,10 +424,6 @@ class FittingTool(Tk.Toplevel):
         
     class DatasetSelector(Tk.LabelFrame):
         def __init__(self,*args,**kwargs):
-            print "DatasetSelector constructor"
-            print args
-            print kwargs
-            
             if 'label' not in kwargs.keys():
                 kwargs['label']='Dataset Selector'
             if 'dataset' in kwargs.keys():
@@ -468,23 +464,22 @@ class FittingTool(Tk.Toplevel):
             b=Tk.Button(f,text='Fetch',command=self.getrange)
             b.grid(row=0,column=2,sticky='NSEW')
             if dataset is not None:
-                self.loadfile(dataset)
+                self.setdataset(dataset,'<internal>','<internal>')
         def loadfile(self,name):
-            if isinstance(name,str):
-                try:
-                    self.dataset=DataSet.new_from_file(name)
-                except IOError:
-                    pass
-                except ValueError:
-                    pass
-                self.filename=name
-                self.filelabel['text']=os.path.split(name)[1]
-                self.dirlabel['text']=os.path.split(name)[0]
-            elif isinstance(name,DataSet):
-                self.dataset=name
-                self.filename='<internal>'
-                self.filelabel['text']='<internal>'
-                self.dirlabel['text']='<internal>'
+            try:
+                name=os.path.realpath(name)
+                dataset=DataSet.new_from_file(name)
+                self.setdataset(dataset,os.path.split(name)[1],os.path.split(name)[0])
+            except IOError:
+                pass
+            except ValueError:
+                pass
+
+        def setdataset(self,dataset,name='N/A',dirname='N/A'):
+            self.dataset=dataset
+            self.filename=name
+            self.filelabel['text']=name
+            self.dirlabel['text']=dirname
             self.npointslabel['text']='%lu'%len(self.dataset.x)
             if 'dy' in self.dataset.keys():
                 self.errorbarslabel['text']='Present'
@@ -551,7 +546,6 @@ class FittingTool(Tk.Toplevel):
             self.dss=self.DatasetSelector(f,dataset=dataset)
         else:
             self.dss=self.DatasetSelector(f)
-        print self.dss
         self.dss.grid(row=0,columnspan=1,sticky='NSEW')
         self.fc=self.FittingControl(f)
         self.fc.grid(row=0,column=1,columnspan=1,sticky='NSEW')
@@ -562,13 +556,16 @@ class FittingTool(Tk.Toplevel):
         self.xss.grid(row=0,column=0,sticky='NSEW')
         self.ts=self.TransformSelector(f)
         self.ts.grid(row=0,column=1,sticky='NSEW')
-        self.fs=self.FuncSelector(self,Narguments=20)
-        self.fs.grid(row=2,columnspan=1,sticky='NSEW')
-        self.mw=self.Messagewindow(self)
-        self.mw.grid(row=3,columnspan=1,sticky='NSEW')
+        pw=Tk.PanedWindow(self,orientation='vertical')
+        pw.grid(row=2,columnspan=1,sticky='NSEW')
+        toppane=pw.add('top',size=200)
+        self.fs=self.FuncSelector(toppane,Narguments=20)
+        self.fs.pack(expand=1,fill='both')
+        bottompane=pw.add('bottom')
+        self.mw=self.Messagewindow(bottompane)
+        self.mw.pack(expand=1,fill='both')
         self.rowconfigure(2,weight=1)
         self.columnconfigure(0,weight=1)
-        self.rowconfigure(3,weight=1)
     def savelog(self,filename):
         self.mw.save(filename)
     def log(self,text):
@@ -596,16 +593,18 @@ class FittingTool(Tk.Toplevel):
         if self.exitonclose:
             quit()
         else:
-            self.destroy()
+            self.withdraw()
     def getfilename(self,*args,**kwargs):
         return self.dss.getfilename(*args,**kwargs)
     def gettransform(self,*args,**kwargs):
         return self.ts.gettransform(*args,**kwargs)
-
+    def setdataset(self,dataset,name=''):
+        self.dss.setdataset(dataset,name)
+        
 # if called as a script:
 if __name__=="__main__":    
     root=Tk.Tk()
     root.withdraw()
-    mw=FittingTool(root,exitoncolose=True)
+    mw=FittingTool(root,exitonclose=True)
     mw.mainloop()
     
