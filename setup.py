@@ -6,7 +6,7 @@ from distutils.core import setup
 #from distutils.sysconfig import get_python_lib, get_python_inc
 import os
 
-VERSION='0.1.0'
+VERSION='0.1.1'
 
 #incdirs=list(set([get_python_lib(0,0),get_python_lib(0,1),get_python_lib(1,0),get_python_lib(1,1),get_python_inc(0),get_python_inc(1)]))
 

@@ -64,44 +64,17 @@ class DataSet(object):
     _plotaxes=None
     _transform=None
     _MCErrorPropSteps=100
-    def __init__(self,x,y,dy=None,dx=None,**kwargs):
-#    def __init__(self,*args,**kwargs):
-#        print "DataSet.__init__:"
-#        print "args:",args
-#        print "kwargs:", kwargs
+    def __init__(self,x,y,dy=None,dx=None,params={}):
+        """Initialize this instance.
+        """
         self._dict={}
-#        if 'x' in kwargs.keys():
-#            x=kwargs['x']
-#            del kwargs['x']
-#        else:
-#            x=args[0]
-#        if 'y' in kwargs.keys():
-#            y=kwargs['y']
-#            del kwargs['y']
-#        else:
-#            y=args[1]
-#        if 'dx' in kwargs.keys():
-#            dx=kwargs['dx']
-#            del kwargs['dx']
-#        else:
-#            if len(args)>3:
-#                dx=args[3]
-#            else:
-#                dx=None
-#        if 'dy' in kwargs.keys():
-#            dy=kwargs['dy']
-#            del kwargs['dy']
-#        else:
-#            if len(args)>2:
-#                dy=args[2]
-#            else:
-#                dy=None
         self['_x']=np.array(x)
         self['_y']=np.array(y)
         if dx is not None:
             self['_dx']=np.array(dx)
         if dy is not None:
             self['_dy']=np.array(dy)
+        self._params=params
     def __getattr__(self,key):
         # answer to "self.key"-type queries
         
@@ -120,7 +93,7 @@ class DataSet(object):
 #        selfkeytrans=object.__getattribute__(self,'_keytrans')
         # test if "key" is in self._dict...
         try:
-            x=self.__getitem__(key)
+            x=self.__getitem__(key,fromgetattr=True)
         except KeyError,key:
             raise AttributeError(key)
         else:
@@ -128,9 +101,12 @@ class DataSet(object):
     def __delattr__(self,key):
         key=self._unalias_keys(key)
         if key in self._dict.keys():
-            self.__delitem__(key)
+            self.__delitem__(key,fromdelattr=True)
         object.__delattr__(self,key)
-    def __delitem__(self,key):
+    def __delitem__(self,key,fromdelattr=False):
+        if not fromdelattr:
+            del self._params[key]
+            return
         key=self._unalias_keys(key)
         del self._dict[key]
     def __setattr__(self,key,value):
@@ -144,10 +120,13 @@ class DataSet(object):
                     key=self._keytrans[key]
             if key in self._dict.keys():
                 #handle these differently! This is the only purpose of this setattr/getattr hack.
-                self.__setitem__(key,value)
+                self.__setitem__(key,value,fromsetattr=True)
                 return
         return object.__setattr__(self,key,value)
-    def __setitem__(self,key,value):
+    def __setitem__(self,key,value,fromsetattr=False):
+        if not fromsetattr:
+            self._params[key]=value
+            return
         key=self._unalias_keys(key)
         if key=='_x':
             self._dict.clear()
@@ -160,7 +139,9 @@ class DataSet(object):
             self._dict[key]=value
         else:
             raise ValueError('lengths of key "%s" and "x" do not match!'%(key))
-    def __getitem__(self,key):
+    def __getitem__(self,key,fromgetattr=False):
+        if not fromgetattr:
+            return self._params[key]
         key1=self._unalias_keys(key)
         if key1 in self._dict.keys():
             return self._dict[key1]
@@ -173,11 +154,6 @@ class DataSet(object):
         return len(self._x)
     def keys(self):
         return self._alias_keys(self._dict.keys())
-#        ret=[]
-#        for k in self._dict.keys():
- #           ret.append(k)
- #           ret.extend([x for x in self._keytrans.keys() if k==self._keytrans[x]])
- #       return ret
     def plot(self,*args,**kwargs):
         if '_plotx' not in self._dict.keys():
             self._do_transform()
@@ -397,7 +373,10 @@ class DataSet(object):
     def values(self):
         return self._dict.values()
     def copy(self):
-        return self.__class__(**self)
+        keys=self.keys()
+        a=dict(zip(keys,[self[k] for k in keys]))
+        a['params']=self._params
+        return self.__class__(**a)
     def trim(self,xmin=-np.inf,xmax=np.inf,inplace=False):
         ind=(self._x<=xmax)&(self._x>=xmin)
         x=self._x[ind]
