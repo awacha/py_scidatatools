@@ -18,9 +18,8 @@ class DataSet2D(object):
     """Two-dimensional data and error matrices with optional abscissa and mask.
     
     x is the column coordinate, y is the row (imshow will plot this intuitively).
-    
-    
     """
+    _xprecision=0.001
     def __init__(self,z,dz='sqrt',x=None,y=None,mask=None,params={}):
         self._xvec=None
         self._yvec=None
@@ -73,7 +72,6 @@ class DataSet2D(object):
             white=np.ones((self.mask.shape[0],self.mask.shape[1],4))
             white[:,:,3]=(-self.mask).astype('float')*maskalpha
             plt.imshow(white,*args,**kwargs)
-        
     def _calcabscissa(self):
         self._xmat,self._ymat=np.meshgrid(self._xvec,self._yvec)
     def getx(self):
@@ -203,9 +201,48 @@ class DataSet2D(object):
         if self.dz is not None:        
             obj.dz=np.absolute(self.dz/self.z)/np.log(10)
         return obj
+    def _iscompatible(self,obj):
+        if not isinstance(obj,DataSet2D):
+            return False
+        else:
+            if self.shape()!=obj.shape():
+                raise DataSet2DError('Datasets are not compatible in shape')
+            if np.std(self.x-obj.x)>self._xprecision:
+                raise DataSet2DError('x coordinates of datasets are not compatible')
+            if np.std(self.y-obj.y)>self._xprecision:
+                raise DataSet2DError('y coordinates of datasets are not compatible')
+            return True
+    def __neg__(self):
+        obj=self.copy()
+        obj.z=-obj.z
+        return obj
+    def __iadd__(self,rhs):
+        if self._iscompatible(rhs):
+            self.z+=rhs.z
+            if self.dz is None:
+                self.dz=rhs.dz
+            elif rhs.dz is not None:
+                self.dz=np.sqrt(self.dz**2+rhs.dz**2)
+            else:
+                pass
+        else:
+            self.z+=rhs
+    def __imul__(self,rhs):
+        if self._iscompatible(rhs):
+            if self.dz is None:
+                self.dz=rhs.dz
+            elif rhs.dz is not None:
+                self.dz=np.sqrt(self.dz**2*rhs.z**2+rhs.dz**2*self.z**2)
+            else:
+                pass
+            self.z*=rhs.z
+        else:
+            self.z*=rhs
+    def _recip(self):
+        obj=self.copy()
+        if obj.dz is not None:
+            obj.dz=np.absolute(self.dz/obj.z**2)
+        obj.z=1./self.z
+        return obj
     
-        
-           
-            
-        
         

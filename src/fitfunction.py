@@ -144,6 +144,7 @@ class FitFunction(object):
             return self.args[idx]
         else:
             return self.defaultargs
+            
 class Transform(object):
     name='Transform base class'
     def __init__(self):
@@ -156,6 +157,11 @@ class Transform(object):
         return u'q (%s)' %unit
     def ylabel(self,unit=u'1/cm'):
         return u'y (%s)' % unit
+    def __str__(self):
+        return self.name
+    __unicode__=__str__
+    def __repr__(self):
+        return '<Transform (%s)>'%self.name
 
         
 class FFLinear(FitFunction):
@@ -208,8 +214,38 @@ class FFPolynomial(FitFunction):
             self.argument_info.append(('A%d'%i,'Coeff. of the x^%d term'%i))
     def __call__(self,x,*coeffs):
         return np.polynomial.polynomial.polyval(x,coeffs)
-    
 
+class FFPowerlawDamped(FitFunction):
+    _factory_arguments=[(0,),(1,),(2,)]
+    name="Damped power-law (non-smooth surfaces)"
+    formula="y(x) = A* x^alpha * exp(-q^2*sigma^2)"
+    argument_info=[('A','factor'),('alpha','Exponent'),('sigma','Thickness of surface')]
+    def __init__(self,bgorder=None):
+        FitFunction.__init__(self)
+        self.bgorder=bgorder 
+        if bgorder is not None:
+            self.name+=" with order #%d background"%bgorder
+            self.formula+=" + sum_(i=0)^(%d) Ai*x^i" %bgorder
+            self.argument_info=self.argument_info[:]
+            for i in range(bgorder+1):
+                self.argument_info.append(('A%d'%i,'Coeff. of the x^%d term'%i))
+    def __call__(self,x,A,alpha,sigma,*bgcoeffs):
+        y1=A*np.power(x,alpha)*np.exp(-x*x*sigma*sigma)
+        if self.bgorder is not None:
+            return y1+np.polynomial.polynomial.polyval(x,bgcoeffs)
+        return y1
+
+class FFPowerlawGauss(FitFunction):
+    name="Power-law plus Gaussian"
+    formula="y(x) = A* x^alpha + B*exp(-(x-x0)^2/(2*sigma^2))+C"
+    argument_info=[('A','factor of the power-law'),('alpha','power-law exponent'),
+                   ('B','factor of the Gaussian'),('x0','center of the Gaussian'),
+                   ('sigma','HWHM of the Gaussian'),('C','Constant background')]
+    def __init__(self):
+        FitFunction.__init__(self)
+    def __call__(self,x,A,alpha,B,x0,sigma,C):
+        return A*np.power(x,alpha)+B*np.exp(-(x-x0)**2/(2*sigma**2))+C
+    
 class FFPowerlaw(FitFunction):
     _factory_arguments=[(0,),(1,),(2,)]
     name="Power-law"
@@ -775,7 +811,7 @@ class TransformPorod(Transform):
     def __init__(self,exponent=4):
         self._exponent=exponent
         self.name='Porod (q^%s)'%exponent
-    def do_transform(self,x,y,dy,dx,**kwargs):
+    def do_transform(self,x,y,dy=None,dx=None,**kwargs):
         d=kwargs
         d['x']=np.power(x,self._exponent)
         d['y']=np.power(x,self._exponent)*y
@@ -790,7 +826,7 @@ class TransformShullRoess(Transform):
     _factory_arguments=None
     def __init__(self,r0):
         self._r0=r0
-    def do_transform(self,x,y,dy,dx,**kwargs):
+    def do_transform(self,x,y,dy=None,dx=None,**kwargs):
         d=kwargs
         d['x']=np.log(np.power(x,2)+3/self._r0**2)
         d['y']=np.log(y)
@@ -804,7 +840,7 @@ class TransformZimm(Transform):
     name='Zimm'
     def __init__(self):
         pass
-    def do_transform(self,x,y,dy,dx,**kwargs):
+    def do_transform(self,x,y,dy=None,dx=None,**kwargs):
         d=kwargs
         d['x']=np.power(x,2)
         d['y']=1/y

@@ -333,8 +333,10 @@ class FittingTool(Tk.Toplevel):
             savelog=FileselectorHelper(self,self.winfo_toplevel().savelog,'Select a file...',logfiletypes)
             b=Tk.Button(self,text="Save log",command=savelog)
             b.grid(row=4,column=0,sticky='NSEW')
+            self.apparentfit=Tk.Checkbutton(self,text='Apparent fit')
+            self.apparentfit.grid(row=5,column=0,sticky='NSEW')
             self.prevargbutton=Tk.Button(self,text='Prev. arg.',command=self.prevargs)
-            self.prevargbutton.grid(row=5,column=0,sticky='NSEW')
+            self.prevargbutton.grid(row=6,column=0,sticky='NSEW')
             self.messagewindow=self.Messagewindow(self)
         def prevargs(self):
             try:
@@ -347,10 +349,21 @@ class FittingTool(Tk.Toplevel):
                 self.prevargbutton.after(1000,dummyfunc)
             
         def plotmodel(self):
+            # get the standard x-scale (real, not transformed values)
             x=self.winfo_toplevel().getxscale()
+            # check if we are doing an apparent fit
+            if self.apparentfit.getvar(self.apparentfit['variable'])=='1':
+                # transform the x-scale
+                x=self.winfo_toplevel().gettransform().do_transform(x,x)['x']
+            #evaluate the function in x
             y=self.winfo_toplevel().fs.evalfunction(x)
+            # make a dataset
             ds=DataSet(x,y)
-            ds.set_transform(self.winfo_toplevel().gettransform())
+            # if not doing an apparent fit, transform the dataset
+            if not self.apparentfit.getvar(self.apparentfit['variable'])=='1':
+                ds.set_transform(self.winfo_toplevel().gettransform())
+            else:
+                ds.set_transform(None)
             self.winfo_toplevel().plot(ds,'r-')
             self.winfo_toplevel().fs.backupargs()
         def plotdataset(self):
@@ -359,13 +372,20 @@ class FittingTool(Tk.Toplevel):
             self.winfo_toplevel().plot(dataset,'b.')
         def fit(self):
             dataset=self.winfo_toplevel().getdataset()
+            if self.apparentfit.getvar(self.apparentfit['variable'])=='1':
+                dataset=dataset.apparent()
+                apparentfit='yes'
+            else:
+                apparentfit='no'
             filename=self.winfo_toplevel().getfilename()
             self.winfo_toplevel().log("========== %s ==========\n"%datetime.datetime.now().isoformat())
             self.winfo_toplevel().log("Fitting %s\n"%os.path.split(filename)[1])
             self.winfo_toplevel().log("Folder: %s\n"%os.path.split(filename)[0])
             self.winfo_toplevel().log("Function: %s\n"%self.winfo_toplevel().fs.getfunction().formula)
             self.winfo_toplevel().log("x_min: %g\n"%min(dataset.x))
-            self.winfo_toplevel().log("y_max: %g\n"%max(dataset.x))
+            self.winfo_toplevel().log("x_max: %g\n"%max(dataset.x))
+            self.winfo_toplevel().log("Apparent fit: %s\n"%apparentfit)
+            self.winfo_toplevel().log("Transform for apparent fit: %s\n"%self.winfo_toplevel().gettransform())
             t0=time.time()
             self._currentfitfunction=self.winfo_toplevel().fs.getfunction()
             self.messagewindow.reset()
@@ -471,9 +491,9 @@ class FittingTool(Tk.Toplevel):
                 dataset=DataSet.new_from_file(name)
                 self.setdataset(dataset,os.path.split(name)[1],os.path.split(name)[0])
             except IOError:
-                pass
+                raise
             except ValueError:
-                pass
+                raise
 
         def setdataset(self,dataset,name='N/A',dirname='N/A'):
             self.dataset=dataset
@@ -481,7 +501,7 @@ class FittingTool(Tk.Toplevel):
             self.filelabel['text']=name
             self.dirlabel['text']=dirname
             self.npointslabel['text']='%lu'%len(self.dataset.x)
-            if 'dy' in self.dataset.keys():
+            if self.dataset.dy.sum()>0:
                 self.errorbarslabel['text']='Present'
             else:
                 self.errorbarslabel['text']='Absent'
@@ -500,7 +520,7 @@ class FittingTool(Tk.Toplevel):
                 rtrim=float(self.rightentry.entry.get())
             except ValueError:
                 rtrim=np.inf
-            return self.dataset.trim(ltrim,rtrim)
+            return self.dataset.trim(ltrim,rtrim,inplace=False)
         def getfilename(self):
             return self.filename
         def getrange(self):
@@ -600,11 +620,14 @@ class FittingTool(Tk.Toplevel):
         return self.ts.gettransform(*args,**kwargs)
     def setdataset(self,dataset,name=''):
         self.dss.setdataset(dataset,name)
-        
-# if called as a script:
-if __name__=="__main__":    
+
+def startfittingtool(dataset=None,exitonclose=False):
     root=Tk.Tk()
     root.withdraw()
-    mw=FittingTool(root,exitonclose=True)
+    mw=FittingTool(root,dataset=dataset,exitonclose=exitonclose)
     mw.mainloop()
-    
+
+# if called as a script:
+if __name__=="__main__":
+    startfittingtool(exitonclose=True)
+    #cProfile.run('startfittingtool(True)','fittingtool_profile')
