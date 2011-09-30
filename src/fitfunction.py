@@ -28,6 +28,8 @@ Conventions: names for subclasses of FitFunction should start with 'FF'. Names
 """
 
 import numpy as np
+from scipy.special import j1
+import cfunctions
 
 class FitFunction(object):
     argument_info=[]
@@ -326,6 +328,49 @@ class FFBilayer3Step(FitFunction):
             Fbtail=Fsphere(x,Rtail+wtail/2)-Fsphere(x,Rtail-wtail/2)
             I+=(rhohead/whead*(Fbin+Fbout)+rhotail/wtail*Fbtail)**2*weight[i]
         return I/weight.sum()+bg;
+        
+class FFMicelleLogNorm(FitFunction):
+    name="Micelle scattered intensity from step functions, with log-normal size distribution"
+    formula="y(x)=Micelle(x,Factor,rhohead,rhotail,rhoPEG,whead,dwhead,wtail,dwtail,wPEG,dwPEG,N,bg)"
+    argument_info=[('Factor','Scaling factor'),
+                   ('Rout','Mean value of the outer radius'),
+                   ('sigma','Sigma parameter of the log-normal distribution of radii'),
+                   ('rhohead','SLD of head groups'),
+                   ('rhotail','SLD of hydrocarbon chains'),
+                   ('rhoPEG','SLD of PEG chains'),
+                   ('whead','thickness of head groups'),
+                   ('shead','stretching weight of the head groups'),
+                   ('wtail','length of the hydrocarbon chain region'),
+                   ('stail','stretching weight of the tail'),
+                   ('wPEG','length of the PEG chains'),
+                   ('sPEG','stretching weight of the PEG chains'),
+                   ('N','Number of MC steps'),
+                   ('bg','Constant background')]
+    defaultargs=[1, 5, 0.001, 0.443-0.333, 0.302-0.333, 0.3385-0.333, 0.5, 
+                 1, 1.6, 1, 4.6, 1, 100, 0]
+    def __call__(self, x, Factor, Rout, sigma, rhohead, rhotail, rhoPEG, whead, 
+                 shead, wtail, stail, wPEG, sPEG, N, bg):
+        # N samples from a log-normal distribution
+        R=np.random.lognormal(np.log(Rout),sigma,N)
+        #normalize the stretching weights
+        sums=float(shead*whead+stail*wtail+sPEG*wPEG)
+        shead=shead*whead/sums
+        stail=stail*wtail/sums
+        sPEG=sPEG*wPEG/sums
+        #divide the difference between R and (whead+wtail+wPEG) among the three
+        # leaflets with respect to the stretching weights
+        residualR=R-(whead+wtail+wPEG)
+        whead=whead+residualR*shead
+        wPEG=wPEG+residualR*sPEG
+        #wtail=wtail+residualR*stail # no need for this quantity later
+        # PEG layer, as a hollow sphere
+        F=rhoPEG*(Fsphere_outer(x,R)-Fsphere_outer(x,R-wPEG))
+        # head groups, hollow sphere
+        F+=rhohead*(Fsphere_outer(x,R-wPEG)-Fsphere_outer(x,R-wPEG-whead))
+        # tail groups, full sphere
+        F+=rhotail*(Fsphere_outer(x,R-whead-wPEG))
+        # intensity
+        return Factor*(F.sum(1)/float(N))**2+bg
         
 class FFGaussianChain(FitFunction):
     name="Scattering intensity of a Gaussian Chain (Debye function)"
@@ -665,6 +710,8 @@ class FFSSL(FitFunction):
             print "Rhoc*VolPEGout1:",rhoc*VolPEGout1
         return A*I/weight.sum()+bg
 
+
+
 class FFLorentzian(FitFunction):
     name="Lorentzian peak"
     formula="y(x)=A/(1+((x-x0)/sigma)^2)+B"
@@ -677,6 +724,38 @@ class FFLorentzian(FitFunction):
 def Fsphere(q,R):
     return 4*np.pi/q**3*(np.sin(q*R)-q*R*np.cos(q*R))
 
+def Fsphere_outer(q,R):
+    qR=np.outer(q,R)
+    q1=np.outer(q,np.ones_like(R))
+    return 4*np.pi/q1**3*(np.sin(qR)-qR*np.cos(qR))
+
+def F2cylinder_scalar(q,R,L,Nstep=1000):
+    factor=16*(R*R*L*np.pi)**2
+    lim1=(j1(q*R)/(q*R)*0.5)**2
+    lim2=(0.5*np.sin(q*L*0.5)/(q*L))**2
+    lim=max(lim1,lim2)
+    x=np.random.rand(Nstep)
+    y=np.random.rand(Nstep)*lim
+    return factor*((y-(j1(q*R*np.sqrt(1-x**2))/(q*R*np.sqrt(1-x**2))*np.sin(q*L*x*0.5)/(q*L*x))**2)<0).sum()/Nstep
+
+class FFCaelyx(FitFunction):
+    name='Caelyx: PEGylated lipid bilayer from step functions and a cylinder inside'
+    formula="CaelyxInt()"
+    argument_info=[('rhohead',''),
+                   ('rhotail',''),
+                   ('rhoPEG',''),
+                   ('rhodox',''),
+                   ('R',''),
+                   ('dR',''),
+                   ('whead',''),
+                   ('wtail',''),
+                   ('wPEG',''),
+                   ('Ldox',''),
+                   ('Rdox',''),
+                   ('Niter',''),
+                  ]
+    def __call__(self,x,rhohead,rhotail,rhoPEg,rhodox,R,dR,whead,wtail,wPEG,Ldox,Rdox,Niter):
+        return cfunctions.IntCaelyx(x,rhohead,rhotail,rhoPEg,rhodox,R,dR,whead,wtail,wPEG,Ldox,Rdox,long(Niter))
 class FFGuinierPorod(FitFunction):
     name="Guinier-Porod model"
     formula="I(q) = q>sqrt(3*(-alpha)/2)/Rg ? (A*q^alpha) : (G*exp(-q^2*Rg^2/3))"
@@ -692,6 +771,30 @@ class FFGuinierPorod(FitFunction):
         y[idxGuinier]=G*np.exp(-x[idxGuinier]**2*Rg**2/3.)
         y[-idxGuinier]=A*np.power(x[-idxGuinier],alpha)
         return y
+
+class FF2GuinierPorod(FitFunction):
+    name="Guinier-Porod model, sum of two"
+    formula="I(q) = GP1(G1,alpha1,Rg1) + GP2(G2,alpha2,Rg2)"
+    argument_info=[('G1','Scaling'),('alpha1','Power-law exponent'),
+                   ('Rg1','Radius of gyration'),
+                   ('G2','Scaling'),('alpha2','Power-law exponent'),
+                   ('Rg2','Radius of gyration')]
+    def __init__(self):
+        FitFunction.__init__(self)
+    def __call__(self,x,G1,alpha1,Rg1,G2,alpha2,Rg2):
+        q1=np.sqrt(3*(-alpha1)/2.)/Rg1
+        q2=np.sqrt(3*(-alpha2)/2.)/Rg2
+        y=np.zeros_like(x)
+        A1=G1*np.exp(alpha1/2.)*np.power(q1,-alpha1)
+        A2=G2*np.exp(alpha2/2.)*np.power(q2,-alpha2)
+        idxGuinier1=x<q1
+        idxGuinier2=x<q2
+        y[idxGuinier1]=G1*np.exp(-x[idxGuinier1]**2*Rg1**2/3.)
+        y[-idxGuinier1]=A1*np.power(x[-idxGuinier1],alpha1)
+        y[idxGuinier2]+=G2*np.exp(-x[idxGuinier2]**2*Rg2**2/3.)
+        y[-idxGuinier2]+=A2*np.power(x[-idxGuinier2],alpha2)
+        return y
+
 
 class FFPorodGuinier(FitFunction):
     name="Porod-Guinier model"

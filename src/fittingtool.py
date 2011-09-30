@@ -7,7 +7,18 @@ Created on Wed Jun 15 13:28:12 2011
 
 import Tix as Tk
 import matplotlib
-matplotlib.use('TkAgg')
+ 
+# IPython has a wrapper for matplotlib.use to inhibit switching backends.
+# It accepts only one argument however, not two, so we have to work it around.
+try:
+    matplotlib.use('TkAgg',warn=False)
+except TypeError:
+    pass
+
+import matplotlib.backends
+if not matplotlib.backends.backend=='TkAgg':
+    raise RuntimeError('Cannot work with other matplotlib backend (currently %s) than TkAgg.'%matplotlib.backends.backend)
+    
 import matplotlib.pyplot as plt
 import os
 import numpy as np
@@ -613,7 +624,8 @@ class FittingTool(Tk.Toplevel):
         if self.exitonclose:
             quit()
         else:
-            self.withdraw()
+            self.destroy()
+            self.quit()
     def getfilename(self,*args,**kwargs):
         return self.dss.getfilename(*args,**kwargs)
     def gettransform(self,*args,**kwargs):

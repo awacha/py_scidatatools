@@ -9,6 +9,17 @@ from errorvalue import ErrorValue
 from attributealias import AliasedAttributes
 
 import numpy as np
+import matplotlib
+# IPython has a wrapper for matplotlib.use to inhibit switching backends.
+# It accepts only one argument however, not two, so we have to work it around.
+try:
+    matplotlib.use('TkAgg',warn=False)
+except TypeError:
+    pass
+
+import matplotlib.backends
+if not matplotlib.backends.backend=='TkAgg':
+    raise RuntimeError('Cannot work with other matplotlib backend (currently %s) than TkAgg.'%matplotlib.backends.backend)
 import matplotlib.pyplot as plt
 from matplotlib.cbook import is_numlike
 import scipy.optimize
@@ -232,7 +243,7 @@ AliasedVectorAttributes or its subclasses')
         
         Inputs:
             accordingto: the field, which should be inspected, or a list of
-                them. If None, defaults to self.keys(), i.e. all fields.
+                them. If None, defaults to self.fields(), i.e. all fields.
             thresholdmin: if the inspected field is smaller than this one, 
                 the line is disregarded.
             thresholdmax: if the inspected field is larger than this one, 
@@ -352,7 +363,7 @@ AliasedVectorAttributes or its subclasses')
             # if we opened the file, close it.
             f.close()
     @classmethod
-    def new_from_file(cls, filename,skiprows=0):
+    def new_from_file(cls, filename, skiprows=0):
         """Load a 1D dataset from a file.
         
         Inputs:
@@ -383,12 +394,16 @@ AliasedVectorAttributes or its subclasses')
             raise ValueError('File %s does not contain any data points.' %
                                 filename)
     def interpolate(self, newx):
+        self1=self.copy()
+        self1.sort()
         obj = self.copy()
         # set shape to None, to allow validation of different shaped fields.
         obj._shape = None
-        for k in self.fields():
-            obj.addfield(k, np.interp(newx,self._x,self.getfield(k)), False)
+        for k in self1.fields():
+            obj.addfield(k, np.interp(newx,self1._x,self1.getfield(k)), False)
         obj._shape = obj.getfield(k).shape
+        if hasattr(obj,'validate'):
+            obj.validate()
         return obj
 
     def modulus(self, exponent = 0, errorrequested = False):
@@ -406,13 +421,13 @@ AliasedVectorAttributes or its subclasses')
             return (m, dm) 
         else:
             return m
+            
     def extend(self,dataset):
         obj=self.copy()
         obj._shape=None
         for k in ['_x','_y','_dx','_dy']:
             if self.hasfield(k) and dataset.hasfield(k):
                 obj.addfield(k,np.concatenate((self.getfield(k),dataset.getfield(k))),False)
-                print "Field %s: len %d + len %d -> len %d"%(k,len(self.getfield(k)),len(dataset.getfield(k)),len(obj.getfield(k)))
             else:
                 print "Extend: skipping field %s"%k
         obj._shape=obj.getfield(k).shape
@@ -420,7 +435,7 @@ AliasedVectorAttributes or its subclasses')
             obj.validate()
         return obj.sort()
         
-    def unite(self,dataset,xmin=None,xmax=None,xsep=None):
+    def unite(self,dataset,xmin=None,xmax=None,xsep=None,Npoints=30):
         if xmin is None:
             xmin=max(self._x.min(),dataset._x.min())
         if xmax is None:
@@ -429,9 +444,15 @@ AliasedVectorAttributes or its subclasses')
             xsep=0.5*(xmin+xmax)
         if xmin>xmax:
             raise ValueError('Datasets do not overlap or xmin > xmax.')
-        I1=ErrorValue(*(self[(self._x>=xmin)&(self._x<=xmax)].modulus(errorrequested=True)))
-        I2=ErrorValue(*(dataset[(dataset._x>=xmin)&(dataset._x<=xmax)].modulus(errorrequested=True)))
+        commonx=np.linspace(xmin,xmax,Npoints)
+        selfint=self.interpolate(commonx)
+        datasetint=dataset.interpolate(commonx)
+        I1=ErrorValue(*(selfint.modulus(errorrequested=True)))
+        I2=ErrorValue(*(datasetint.modulus(errorrequested=True)))
         obj=self[self._x<=xsep]
+        print "I1:",I1
+        print "I2:",I2
+        print "Uniting factor:", (I1/I2)
         dataset=dataset*(I1/I2)
         return obj.extend(dataset[dataset._x>xsep])
         
@@ -569,48 +590,73 @@ PlotAndTransform or its subclasses')
         """
         if not self._plotuptodate:
             self._do_transform()
-        plt.plot(self._plotx, self._ploty, *args, **kwargs)
-        self._plotaxes = plt.gca()
+        if len(args)>0 and isinstance(args[0],matplotlib.axes.Axes):
+            ax=args[0]
+            args=args[1:]
+        else:
+            ax=plt.gca()
+        ax.plot(self._plotx, self._ploty, *args, **kwargs)
+        self._plotaxes = ax
     def errorbar(self, *args, **kwargs):
         """Plot current dataset. Call plt.errorbar() with the appropriate
         arguments.
         """
         if not self._plotuptodate:
             self._do_transform()
-        if '_plotdy' not in self.keys():
+        if '_plotdy' not in self.fields():
             dy = None
         else:
             dy = self._plotdy
-        if '_plotdx' not in self.keys():
+        if '_plotdx' not in self.fields():
             dx = None
         else:
             dx = self._plotdx
-        plt.errorbar(self._plotx, self._ploty, dy, dx, *args, **kwargs)
-        self._plotaxes = plt.gca()
+        if len(args)>0 and isinstance(args[0],matplotlib.axes.Axes):
+            ax=args[0]
+            args=args[1:]
+        else:
+            ax=plt.gca()
+        ax.errorbar(self._plotx, self._ploty, dy, dx, *args, **kwargs)
+        self._plotaxes = ax
     def loglog(self, *args, **kwargs):
         """Plot current dataset. Call plt.loglog() with the appropriate
         arguments.
         """
         if not self._plotuptodate:
             self._do_transform()
-        plt.loglog(self._plotx, self._ploty, *args, **kwargs)
-        self._plotaxes = plt.gca()
+        if len(args)>0 and isinstance(args[0],matplotlib.axes.Axes):
+            ax=args[0]
+            args=args[1:]
+        else:
+            ax=plt.gca()
+        ax.loglog(self._plotx, self._ploty, *args, **kwargs)
+        self._plotaxes = ax
     def semilogx(self, *args, **kwargs):
         """Plot current dataset. Call plt.semilogx() with the appropriate
         arguments.
         """
         if not self._plotuptodate:
             self._do_transform()
-        plt.semilogx(self._plotx, self._ploty, *args, **kwargs)
-        self._plotaxes = plt.gca()
+        if len(args)>0 and isinstance(args[0],matplotlib.axes.Axes):
+            ax=args[0]
+            args=args[1:]
+        else:
+            ax=plt.gca()
+        ax.semilogx(self._plotx, self._ploty, *args, **kwargs)
+        self._plotaxes = ax
     def semilogy(self, *args, **kwargs):
         """Plot current dataset. Call plt.semilogy() with the appropriate
         arguments.
         """
         if not self._plotuptodate:
             self._do_transform()
-        plt.semilogy(self._plotx, self._ploty, *args, **kwargs)
-        self._plotaxes = plt.gca()
+        if len(args)>0 and isinstance(args[0],matplotlib.axes.Axes):
+            ax=args[0]
+            args=args[1:]
+        else:
+            ax=plt.gca()
+        ax.semilogy(self._plotx, self._ploty, *args, **kwargs)
+        self._plotaxes = ax
     def _attr_validate(self, name, value):
         """Attribute validation plugin to invalidate plot when an attribute
         is added."""

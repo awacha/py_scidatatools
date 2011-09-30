@@ -175,5 +175,11 @@ AliasedAttributes or its subclasses')
     def clear(self):
         """Remove all fields"""
         self.removefield(self.fields())
+    def asdict(self):
+        """Return a dictionary representation."""
+        d={}
+        for k in self.fields():
+            d[k]=self.getfield(k)
+        return d
     # shortcut
     getfield = __getattr__

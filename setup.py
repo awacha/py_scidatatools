@@ -1,17 +1,17 @@
 #!/usb/bin/env python
 
 from distutils.core import setup
-#from distutils.extension import Extension
-#from Cython.Distutils import build_ext
-#from distutils.sysconfig import get_python_lib, get_python_inc
+from distutils.extension import Extension
+from Cython.Distutils import build_ext
+from distutils.sysconfig import get_python_lib, get_python_inc
 import os
 
 VERSION='0.1.2'
 
-#incdirs=list(set([get_python_lib(0,0),get_python_lib(0,1),get_python_lib(1,0),get_python_lib(1,1),get_python_inc(0),get_python_inc(1)]))
+incdirs=list(set([get_python_lib(0,0),get_python_lib(0,1),get_python_lib(1,0),get_python_lib(1,1),get_python_inc(0),get_python_inc(1)]))
 
-#npy_incdirs=[os.path.join(x,'numpy/core/include') for x in incdirs]
-#incdirs.extend(npy_incdirs)
+npy_incdirs=[os.path.join(x,'numpy/core/include') for x in incdirs]
+incdirs.extend(npy_incdirs)
 
 #try:
 #    f=open('src/__init__.py','rt')
@@ -50,6 +50,8 @@ VERSION='0.1.2'
 #               Extension("B1python.c_unstable",["src/c_unstable.pyx"],include_dirs=incdirs),
 #               ]
 
+ext_modules = [Extension("py_scidatatools.cfunctions",['src/cfunctions.pyx'],include_dirs=incdirs)]
+
 setup(name='py_scidatatools',version=VERSION, author='Andras Wacha',
       author_email='awacha@gmail.com',url='http://github.com/awacha/py_scidatatools',
       description='Python tools for scientific data processing',
@@ -60,8 +62,8 @@ setup(name='py_scidatatools',version=VERSION, author='Andras Wacha',
                  ],
       package_dir={'py_scidatatools': 'src'},
 #      package_data={'B1python': ['calibrationfiles/*']},
-#      cmdclass = {'build_ext': build_ext},
-#      ext_modules = ext_modules,
+      cmdclass = {'build_ext': build_ext},
+      ext_modules = ext_modules,
 #      scripts = ['src/B1guitool.py']
       )
       
