@@ -1,3 +1,4 @@
+#!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
 Created on Wed Jun 15 13:28:12 2011
@@ -7,7 +8,9 @@ Created on Wed Jun 15 13:28:12 2011
 
 import Tix as Tk
 import matplotlib
- 
+import importlib
+import sys
+
 # IPython has a wrapper for matplotlib.use to inhibit switching backends.
 # It accepts only one argument however, not two, so we have to work it around.
 try:
@@ -25,8 +28,12 @@ import numpy as np
 import datetime
 import time
 
-from dataset import DataSet
-import fitfunction
+if __name__ == '__main__':
+    from py_scidatatools.dataset import DataSet
+    import py_scidatatools.fitfunction as fitfunction
+else:
+    from dataset import DataSet
+    import fitfunction
 
 class FittingtoolStopIteration(Exception):
     pass
@@ -100,7 +107,7 @@ class FittingTool(Tk.Toplevel):
         def __init__(self,master):
             Tk.LabelFrame.__init__(self,master,label='X scale')
             self.frame.columnconfigure(0,weight=1)
-            self.usedataset=Tk.Checkbutton(self.frame,text='Use the x-scale of the current dataset',command=self.togglecb)
+            self.usedataset=Tk.Checkbutton(self.frame,text='Get from dataset',command=self.togglecb)
             self.usedataset.grid(row=0,column=0,sticky='NSW')
             self.xmin=ValidatedLabelEntry(self.frame,label='X min')
             self.xmin.grid(row=1,sticky='NSEW')
@@ -155,19 +162,20 @@ class FittingTool(Tk.Toplevel):
             n=self.normalize_selection()
             name=self.selector.get(n)
             return [t for t in self.transforms if t.name==name][0]
+            
     class FuncSelector(Tk.LabelFrame):
         functions=fitfunction.Factory(fitfunction.FitFunction)
         argframerow=[]
         selectedfunction=None
         def __init__(self,master,Narguments=8):
+            self.fully_constructed=False
             Tk.LabelFrame.__init__(self,master,label='Select a function')
             self.frame.rowconfigure(1,weight=0)
             self.frame.rowconfigure(2,weight=1)
             self.frame.columnconfigure(0,weight=1)
             self.selector=Tk.ComboBox(self.frame,editable=False,command=self.selectfunction,label='Function:')
             self.selector.grid(row=0,column=0,sticky='NSEW')
-            for f in self.functions:
-                self.selector.insert(Tk.END,f.name)
+            self.updatefunctions()
             f=Tk.Frame(self.frame)
             f.grid(row=1,column=0,sticky='NSEW')
             Tk.Label(f,text='Formula:',justify=Tk.LEFT,anchor=Tk.W).grid(row=0,column=0,sticky='NSEW')
@@ -184,9 +192,9 @@ class FittingTool(Tk.Toplevel):
             argframe.columnconfigure(1,weight=1)
             Tk.Label(argframe,text='Name',justify=Tk.LEFT,anchor=Tk.W).grid(row=0,column=0,sticky='NSW')
             Tk.Label(argframe,text='Value',justify=Tk.LEFT,anchor=Tk.W).grid(row=0,column=1,sticky='NSEW')
-            Tk.Label(argframe,text='Vary?',justify=Tk.LEFT,anchor=Tk.W).grid(row=0,column=2,sticky='NSW')
-            Tk.Label(argframe,text='Error',justify=Tk.LEFT,anchor=Tk.W).grid(row=0,column=3,sticky='NSEW')
-            
+            Tk.Label(argframe,text='Scaling',justify=Tk.LEFT,anchor=Tk.W).grid(row=0,column=2,sticky='NSEW')
+            Tk.Label(argframe,text='Vary?',justify=Tk.LEFT,anchor=Tk.W).grid(row=0,column=3,sticky='NSW')
+            Tk.Label(argframe,text='Error',justify=Tk.LEFT,anchor=Tk.W).grid(row=0,column=4,sticky='NSEW')
             #argframe.columnconfigure(0,weight=1)
             for i in range(Narguments):
                 #name value vary? dep
@@ -197,14 +205,18 @@ class FittingTool(Tk.Toplevel):
                 self.argframerow[-1]['name'].tooltip.bind_widget(self.argframerow[-1]['name'],balloonmsg='')
                 self.argframerow[-1]['name'].tooltip.config_all('bg','yellow')
                 self.argframerow[-1]['name'].tooltip['initwait']=100
-                self.argframerow[-1]['value']=ValidatedEntry(argframe)
+                self.argframerow[-1]['value']=ValidatedEntry(argframe,width=5)
                 self.argframerow[-1]['value'].insert(0,'0')
                 self.argframerow[-1]['value'].grid(row=i+1,column=1,sticky='NSEW')
+                self.argframerow[-1]['scaling']=ValidatedEntry(argframe,width=5)
+                self.argframerow[-1]['scaling'].insert(0,'1')
+                self.argframerow[-1]['scaling'].grid(row=i+1,column=2,sticky='NSEW')
                 self.argframerow[-1]['vary']=Tk.Checkbutton(argframe,text='Vary?')
-                self.argframerow[-1]['vary'].grid(row=i+1,column=2,sticky='NSW')
+                self.argframerow[-1]['vary'].grid(row=i+1,column=3,sticky='NSW')
                 self.argframerow[-1]['error']=Tk.Label(argframe,text='--',justify=Tk.LEFT,anchor=Tk.W)
-                self.argframerow[-1]['error'].grid(row=i+1,column=3,sticky='NSW')
+                self.argframerow[-1]['error'].grid(row=i+1,column=4,sticky='NSW')
                 argframe.rowconfigure(i,weight=1)
+            self.fully_constructed=True
             self.selector.pick(0)
         def getargs(self,getall=True):
             if self.selectedfunction is None:
@@ -215,9 +227,37 @@ class FittingTool(Tk.Toplevel):
                 if getall or self.argframerow[i]['vary'].getvar(self.argframerow[i]['vary']['variable'])=='1':
                     vals.append(float(self.argframerow[i]['value'].get()))
             return vals
+        def getscaling(self,getall=True):
+            if self.selectedfunction is None:
+                return
+            N=self.selectedfunction.numargs()
+            vals=[]
+            for i in range(N):
+                if getall or self.argframerow[i]['vary'].getvar(self.argframerow[i]['vary']['variable'])=='1':
+                    vals.append(float(self.argframerow[i]['scaling'].get()))
         def setargs(self,args,stdargs=None):
             self.backupargs()
             self.updateargs(args,stdargs)
+        def updatefunctions(self,filename=None):
+            if filename is not None:
+                dirname,modulename=os.path.split(filename)
+                try:
+                    sys.path.insert(0,dirname)
+                    modulename=os.path.splitext(modulename)[0]
+                    importlib.import_module(modulename)
+                    sys.path.remove(dirname)
+                except:
+                    raise
+            if hasattr(self,'selector'):
+                self.selector.destroy()
+            self.selector=Tk.ComboBox(self.frame,editable=False,command=self.selectfunction,label='Function:')
+            self.selector.grid(row=0,column=0,sticky='NSEW')
+            self.functions=fitfunction.Factory(fitfunction.FitFunction)
+            for f in self.functions:
+                self.selector.insert(Tk.END,f.name)
+            if self.fully_constructed:
+                self.selector.pick(0)
+            
         def updateargs(self,args,stdargs=None):
             N=self.selectedfunction.numargs()
             j=0
@@ -335,19 +375,32 @@ class FittingTool(Tk.Toplevel):
             b=Tk.Button(self,text="Plot model",command=self.plotmodel)
             b.grid(row=0,column=0,columnspan=1,sticky='NSEW')
             b=Tk.Button(self,text="Plot dataset",command=self.plotdataset)
-            b.grid(row=1,column=0,columnspan=1,sticky='NSEW')
-            b=Tk.Button(self,text="Fit",command=self.fit)
-            b.grid(row=2,column=0,columnspan=1,sticky='NSEW')
+            b.grid(row=0,column=1,columnspan=1,sticky='NSEW')
             b=Tk.Button(self,text="Clear",command=self.winfo_toplevel().clearfigure)
-            b.grid(row=3,column=0,columnspan=1,sticky='NSEW')
+            b.grid(row=1,column=0,columnspan=1,sticky='NSEW')
             logfiletypes=[('*.log','Log files(*.log)'),('*.txt','Text files'),('*','All files (*)')]            
             savelog=FileselectorHelper(self,self.winfo_toplevel().savelog,'Select a file...',logfiletypes)
             b=Tk.Button(self,text="Save log",command=savelog)
-            b.grid(row=4,column=0,sticky='NSEW')
-            self.apparentfit=Tk.Checkbutton(self,text='Apparent fit')
-            self.apparentfit.grid(row=5,column=0,sticky='NSEW')
+            b.grid(row=1,column=1,sticky='NSEW')
+            b=Tk.Button(self,text="Fit",command=self.fit)
+            b.grid(row=2,column=0,columnspan=1,sticky='NSEW')
             self.prevargbutton=Tk.Button(self,text='Prev. arg.',command=self.prevargs)
-            self.prevargbutton.grid(row=6,column=0,sticky='NSEW')
+            self.prevargbutton.grid(row=2,column=1,sticky='NSEW')
+            self.fittype=Tk.ComboBox(self)
+            self.fittype.grid(row=3,column=0,columnspan=2,sticky='NSEW')
+            self.fittype.insert(Tk.END,'Normal fit')
+            self.fittype['value']='Normal'
+            #self.fittype.insert(Tk.END,'Scaled params.')
+            self.fittype.insert(Tk.END,'Apparent fit')
+            #self.fittype.insert(Tk.END,'Transformed dataset')
+            self.fitepsilon=ValidatedLabelEntry(self,label='Epsilon:')
+            self.fitepsilon.entry.insert(0,'0.0')
+            self.fitepsilon.grid(row=4,column=0,columnspan=2,sticky='NSEW')
+
+            funcfiletypes=[('*.py','Function files (*.py)'),('*','All files (*)')]            
+            loadfcn=FileselectorHelper(self,self.winfo_toplevel().loadfitfunction,'Select a file...',funcfiletypes)
+            b=Tk.Button(self,text="Load functions",command=loadfcn)
+            b.grid(row=5,column=0,columnspan=2,sticky='NSEW')
             self.messagewindow=self.Messagewindow(self)
         def prevargs(self):
             try:
@@ -358,12 +411,13 @@ class FittingTool(Tk.Toplevel):
                 def dummyfunc(butt=self.prevargbutton):
                     butt['bg']=butt.oldbg
                 self.prevargbutton.after(1000,dummyfunc)
-            
+        def getfittype(self):
+            return self.fittype['value'].split()[0]
         def plotmodel(self):
             # get the standard x-scale (real, not transformed values)
             x=self.winfo_toplevel().getxscale()
             # check if we are doing an apparent fit
-            if self.apparentfit.getvar(self.apparentfit['variable'])=='1':
+            if self.getfittype()=='Apparent':
                 # transform the x-scale
                 x=self.winfo_toplevel().gettransform().do_transform(x,x)['x']
             #evaluate the function in x
@@ -371,7 +425,7 @@ class FittingTool(Tk.Toplevel):
             # make a dataset
             ds=DataSet(x,y)
             # if not doing an apparent fit, transform the dataset
-            if not self.apparentfit.getvar(self.apparentfit['variable'])=='1':
+            if not self.getfittype()=='Apparent':
                 ds.set_transform(self.winfo_toplevel().gettransform())
             else:
                 ds.set_transform(None)
@@ -383,11 +437,9 @@ class FittingTool(Tk.Toplevel):
             self.winfo_toplevel().plot(dataset,'b.')
         def fit(self):
             dataset=self.winfo_toplevel().getdataset()
-            if self.apparentfit.getvar(self.apparentfit['variable'])=='1':
+            fittype=self.getfittype()
+            if fittype=='Apparent':
                 dataset=dataset.apparent()
-                apparentfit='yes'
-            else:
-                apparentfit='no'
             filename=self.winfo_toplevel().getfilename()
             self.winfo_toplevel().log("========== %s ==========\n"%datetime.datetime.now().isoformat())
             self.winfo_toplevel().log("Fitting %s\n"%os.path.split(filename)[1])
@@ -395,13 +447,16 @@ class FittingTool(Tk.Toplevel):
             self.winfo_toplevel().log("Function: %s\n"%self.winfo_toplevel().fs.getfunction().formula)
             self.winfo_toplevel().log("x_min: %g\n"%min(dataset.x))
             self.winfo_toplevel().log("x_max: %g\n"%max(dataset.x))
-            self.winfo_toplevel().log("Apparent fit: %s\n"%apparentfit)
-            self.winfo_toplevel().log("Transform for apparent fit: %s\n"%self.winfo_toplevel().gettransform())
+            self.winfo_toplevel().log("Fit type: %s\n"%fittype)
+            self.winfo_toplevel().log("Transform: %s\n"%self.winfo_toplevel().gettransform())
             t0=time.time()
             self._currentfitfunction=self.winfo_toplevel().fs.getfunction()
             self.messagewindow.reset()
             try:
-                p,pstd,infodict=dataset.fit(self.fitfunction_hacked,self.winfo_toplevel().fs.getargs(getall=False),doplot=False,ext_output=True)
+                args=self.winfo_toplevel().fs.getargs(getall=False)
+                scaling=self.winfo_toplevel().fs.getscaling(getall=False)
+                epsfcn=float(self.fitepsilon.get())
+                p,pstd,infodict=dataset.fit(self.fitfunction_hacked,args,doplot=False,ext_output=True,diag=scaling,epsfcn=epsfcn)
             except:
                 if self.messagewindow.dobreak:
                     self.winfo_toplevel().log('User break.\n')
@@ -632,7 +687,11 @@ class FittingTool(Tk.Toplevel):
         return self.ts.gettransform(*args,**kwargs)
     def setdataset(self,dataset,name=''):
         self.dss.setdataset(dataset,name)
-
+    def loadfitfunction(self,*args,**kwargs):
+        print "loadfitfunction"
+        print "args:",args
+        print "kwargs:",kwargs
+        self.fs.updatefunctions(*args,**kwargs)
 def startfittingtool(dataset=None,exitonclose=False):
     root=Tk.Tk()
     root.withdraw()

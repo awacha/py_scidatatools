@@ -4,6 +4,7 @@ Created on Thu Aug 25 11:21:02 2011
 
 @author: -
 """
+import numpy as np
 
 class AliasedAttributes(object):
     """Mixin class to allow for aliased and validated attributes. Aliasing is 
@@ -93,7 +94,7 @@ class AliasedAttributes(object):
         #    it does, set that field by calling self.addfield() and return
         # 2) call the upstream __setattr__.
         key1 = self.unalias_keys(key)
-        if key1 in self._dict.keys():
+        if key1 in self._dict.keys() or key1 in self._keytrans.values():
             self.addfield(key, value)
         else:
             object.__setattr__(self, key, value)
@@ -183,3 +184,97 @@ AliasedAttributes or its subclasses')
         return d
     # shortcut
     getfield = __getattr__
+
+class AliasedArrayAttributes(AliasedAttributes):
+    """This mixin class adds support for aliased array attributes. It inherits
+    from AliadedAttributes to perform attribute aliasing. All aliased attributes
+    need to be numpy ndarrays of the same shape. This is ensured by a validating
+    function _attr_validate().
+    
+    The attribute initialization mechanism of AliasedAttributes is used to
+    initialize not available attributes to zero if they are referenced. 
+    
+    The constructor accepts 'normalnames', a keyword argument. It should be a
+    list defining the names of the aliased attributes. Their unaliased
+    counterparts will be constructed by prepending an underscore to their names.
+    The keyword argument 'keytrans' will be constructed appropriately for
+    AliasedAttributes. If 'keytrans' was supplied to the constructor, it will be
+    updated accordingly.
+    
+    Slicing and array-like indexing is implemented (only getting, but not
+    setting or deleting slices).
+    """
+    def __init__(self, **kwargs):
+        if 'normalnames' not in kwargs.keys():
+            kwargs['normalnames'] = []
+        self._normalnames = kwargs['normalnames']
+        del kwargs['normalnames']
+        self._protnames = ['_%s'%a for a in self._normalnames]
+        if 'keytrans' not in kwargs.keys():
+            kwargs['keytrans'] = {}
+        
+        #update 'keytrans'
+        kwargs['keytrans'].update(dict(zip(self._normalnames, self._protnames)))
+        AliasedAttributes.__init__(self, **kwargs)
+        self._shape = None
+    def _init_attribute(self,name):
+        #this is called by AliasedAttributes.__getattr__ if 'name' is not found.
+        
+        #if '_shape' is None or an empty list, we cannot do anything, raise an
+        # exception
+        shape=object.__getattribute__(self, '_shape')
+        if not shape: 
+            raise NotImplementedError
+
+        #If 'name' is not a field name we know of, we cannot do anything.
+        if not object.__getattribute__(self,'couldhavefield')(name):
+            raise NotImplementedError
+        #otherwise set the field to zero.
+        object.__getattribute__(self, 'addfield')(name, np.zeros(shape), False)
+    def copy_into(self, into):
+        """Helper function for copy(): deep copying."""
+        if not isinstance(into, AliasedArrayAttributes):
+            raise TypeError('copy_into() cannot copy into other types than \
+AliasedArrayAttributes or its subclasses')
+        AliasedAttributes.copy_into(self, into)
+        into._shape = self._shape
+        into._protnames = self._protnames[:]
+        into._normalnames = self._normalnames[:]
+    def shape(self):
+        """Return the (common) shape of the attributes"""
+        return self._shape
+    def __len__(self):
+        if self._shape is not None:
+            return reduce(lambda a, b:a*b, [x for x in self._shape if x > 0])
+        else:
+            return None
+    def _attr_validate(self, name, value):
+        """Validator function"""
+        if value is None:
+            if self._shape is None:
+                raise ValueError('None is not allowed for the first field in \
+DataSet!')
+            else:
+                # make it zero
+                value = np.zeros(self._shape)
+        value = np.array(value) # convert it to a numpy array
+        if not self._shape: # None or an empty tuple/list
+            self._shape = value.shape
+        if value.shape != self._shape:
+            raise ValueError('Invalid shape for new field!')
+        return value
+    def __getitem__(self, key):
+        """Slicing. Forward arguments to the __getitem__ members of the aliased
+        attributes (of type numpy.ndarray)."""
+        #make a copy
+        obj = self.copy()
+        # set shape to None, to allow validation of different shaped fields.
+        obj._shape = None
+        for k in self.fields():
+            obj.addfield(k, self.getfield(k)[key], False)
+        obj._shape = obj.getfield(k).shape
+        return obj
+    def clear(self):
+        """Clear all attributes."""
+        AliasedAttributes.clear(self)
+        self._shape = None

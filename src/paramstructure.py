@@ -169,4 +169,13 @@ class ParamStructure(dict):
                 self.fromstring(f.read(),*args,**kwargs)
             finally:
                 f.close()
-    
+    def copy(self):
+        obj=self.__class__()
+        for k in self.keys():
+            if hasattr(self[k],'copy'):
+                obj[k]=self[k].copy()
+            elif issubclass(self[k],list):
+                obj[k]=self[k][:]
+            else:
+                obj[k]=self[k]
+        return obj
