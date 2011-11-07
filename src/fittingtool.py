@@ -455,7 +455,7 @@ class FittingTool(Tk.Toplevel):
             try:
                 args=self.winfo_toplevel().fs.getargs(getall=False)
                 scaling=self.winfo_toplevel().fs.getscaling(getall=False)
-                epsfcn=float(self.fitepsilon.get())
+                epsfcn=float(self.fitepsilon.entry.get())
                 p,pstd,infodict=dataset.fit(self.fitfunction_hacked,args,doplot=False,ext_output=True,diag=scaling,epsfcn=epsfcn)
             except:
                 if self.messagewindow.dobreak:

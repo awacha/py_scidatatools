@@ -6,7 +6,7 @@ from Cython.Distutils import build_ext
 from distutils.sysconfig import get_python_lib, get_python_inc
 import os
 
-VERSION='0.1.3'
+VERSION='0.1.4'
 
 incdirs=list(set([get_python_lib(0,0),get_python_lib(0,1),get_python_lib(1,0),get_python_lib(1,1),get_python_inc(0),get_python_inc(1)]))
 
@@ -57,9 +57,9 @@ setup(name='py_scidatatools',version=VERSION, author='Andras Wacha',
       description='Python tools for scientific data processing',
       packages=['py_scidatatools'],
       py_modules=['py_scidatatools.dataset','py_scidatatools.fitfunction',
-                  'py_scidatatools.fittingtool','py_scidatatools.utils','py_scidatatools.errorvalue',
+                  'py_scidatatools.utils','py_scidatatools.errorvalue',
                   'py_scidatatools.attributealias','py_scidatatools.calculator',
-                 ],
+                  'py_scidatatools.dataset2d','py_scidatatools.paramstructure'],
       package_dir={'py_scidatatools': 'src'},
 #      package_data={'B1python': ['calibrationfiles/*']},
       cmdclass = {'build_ext': build_ext},

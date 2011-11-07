@@ -10,16 +10,7 @@ from attributealias import AliasedAttributes,AliasedArrayAttributes
 
 import numpy as np
 import matplotlib
-# IPython has a wrapper for matplotlib.use to inhibit switching backends.
-# It accepts only one argument however, not two, so we have to work it around.
-try:
-    matplotlib.use('TkAgg',warn=False)
-except TypeError:
-    pass
 
-import matplotlib.backends
-if not matplotlib.backends.backend=='TkAgg':
-    raise RuntimeError('Cannot work with other matplotlib backend (currently %s) than TkAgg.'%matplotlib.backends.backend)
 import matplotlib.pyplot as plt
 from matplotlib.cbook import is_numlike
 import scipy.optimize
@@ -347,8 +338,6 @@ AliasedVectorAttributes or its subclasses')
             xmin=max(self._x.min(),dataset._x.min())
         if xmax is None:
             xmax=min(self._x.max(),dataset._x.max())
-        if xsep is None:
-            xsep=0.5*(xmin+xmax)
         if xmin>xmax:
             raise ValueError('Datasets do not overlap or xmin > xmax.')
         commonx=np.linspace(xmin,xmax,Npoints)
@@ -356,12 +345,30 @@ AliasedVectorAttributes or its subclasses')
         datasetint=dataset.interpolate(commonx)
         I1=ErrorValue(*(selfint.modulus(errorrequested=True)))
         I2=ErrorValue(*(datasetint.modulus(errorrequested=True)))
-        obj=self[self._x<=xsep]
+        obj=self.copy()
         print "I1:",I1
         print "I2:",I2
         print "Uniting factor:", (I1/I2)
         dataset=dataset*(I1/I2)
-        return obj.extend(dataset[dataset._x>xsep])
+        if xsep is not None:
+            return obj[obj._x<=xsep].extend(dataset[dataset._x>xsep])
+        else:
+            return obj.extend(dataset)
+    
+    @staticmethod
+    def average(*datasets):
+        if len(datasets)==1 and hasattr(datasets[0],'__getitem__'):
+            datasets=datasets[0]
+        res=datasets[0].copy()
+        res._y=np.zeros_like(res._y)
+        res._dy=np.zeros_like(res._y)
+        for ds in datasets:
+            w=1/ds._dy**2
+            res._y=res._y+ds._y*w
+            res._dy=res._dy+w
+        res._y=res._y/res._dy
+        res._dy=np.sqrt(1/res._dy)
+        return res
         
 
 
@@ -904,11 +911,15 @@ keyword argument \'%s\''%n)
             infodict['mesg'] = mesg
             infodict['ier'] = ier
             infodict['weighting'] = weighting
-            infodict['cov_x'] = np.array(cov_x)*chisquare/degrees_of_freedom
+            if cov_x is None:
+                infodict['cov_x']=np.zeros((len(p),len(p)))*np.nan
+            else:
+                infodict['cov_x'] = np.array(cov_x)*float(chisquare)/float(degrees_of_freedom)
             infodict['R2'] = r2
             return p, pstd, infodict
         else:            
             return p, pstd
+            
         
 class SASCurve(DataSet):
     def __init__(self, *args, **kwargs):
@@ -932,4 +943,5 @@ def errtrapz(x, yerr):
     return 0.5*np.sqrt((x[1]-x[0])**2*yerr[0]**2+
                         np.sum((x[2:]-x[:-2])**2*yerr[1:-1]**2)+
                         (x[-1]-x[-2])**2*yerr[-1]**2)
-        
+
+

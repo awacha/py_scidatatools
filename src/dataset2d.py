@@ -12,16 +12,6 @@ import paramstructure
 from attributealias import AliasedArrayAttributes
 from utils import ArithmeticBase
 import matplotlib
-# IPython has a wrapper for matplotlib.use to inhibit switching backends.
-# It accepts only one argument however, not two, so we have to work it around.
-try:
-    matplotlib.use('TkAgg',warn=False)
-except TypeError:
-    pass
-
-import matplotlib.backends
-if not matplotlib.backends.backend=='TkAgg':
-    raise RuntimeError('Cannot work with other matplotlib backend (currently %s) than TkAgg.'%matplotlib.backends.backend)
 import matplotlib.pyplot as plt
 import numpy as np
 import scipy.io
