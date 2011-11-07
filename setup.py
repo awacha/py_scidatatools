@@ -6,36 +6,36 @@ from Cython.Distutils import build_ext
 from distutils.sysconfig import get_python_lib, get_python_inc
 import os
 
-VERSION='0.1.6'
+VERSION='0.1.7'
 
 incdirs=list(set([get_python_lib(0,0),get_python_lib(0,1),get_python_lib(1,0),get_python_lib(1,1),get_python_inc(0),get_python_inc(1)]))
 
 npy_incdirs=[os.path.join(x,'numpy/core/include') for x in incdirs]
 incdirs.extend(npy_incdirs)
 
-#try:
-#    f=open('src/__init__.py','rt')
-#    lines=f.readlines()
-#    f.close()
-#    verline=[l for l in lines if l.strip().startswith('VERSION')][0]
-#    verline=verline.split('=')[1].strip()[1:-1]
-#    if verline==VERSION:
-#        raise RuntimeError # to quit this try block
-#    f1=open('src/__init__.py','w+t')
-#    for l in lines:
-#        if l.strip().startswith('VERSION'):
-#            l='VERSION="%s"\n' % VERSION
-#        f1.write(l)
-#    f1.close() 
-#    print ""
-#    print "+---------------------------------------%s------------+" % ('-'*len(VERSION))
-#    print "| UPDATED VERSION IN src/__init__.py to %s !!!!!!!!!! |" % VERSION
-#    print "+---------------------------------------%s------------+" % ('-'*len(VERSION))
-#    print ""
-#except IOError:
-#    print "Cannot update VERSION in src/__init__.py"
-#except RuntimeError:
-#    pass
+try:
+    f=open('src/__init__.py','rt')
+    lines=f.readlines()
+    f.close()
+    verline=[l for l in lines if l.strip().startswith('VERSION')][0]
+    verline=verline.split('=')[1].strip()[1:-1]
+    if verline==VERSION:
+        raise RuntimeError # to quit this try block
+    f1=open('src/__init__.py','w+t')
+    for l in lines:
+        if l.strip().startswith('VERSION'):
+            l='VERSION="%s"\n' % VERSION
+        f1.write(l)
+    f1.close() 
+    print ""
+    print "+---------------------------------------%s------------+" % ('-'*len(VERSION))
+    print "| UPDATED VERSION IN src/__init__.py to %s !!!!!!!!!! |" % VERSION
+    print "+---------------------------------------%s------------+" % ('-'*len(VERSION))
+    print ""
+except (IOError,IndexError):
+    print "Cannot update VERSION in src/__init__.py"
+except RuntimeError:
+    pass
 
 #ext_modules = [Extension("B1python.c_asamacros", ["src/c_asamacros.pyx"],include_dirs=incdirs),
 #               Extension("B1python.c_asaxseval",["src/c_asaxseval.pyx"],include_dirs=incdirs),
