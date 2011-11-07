@@ -8,7 +8,6 @@ Created on Wed Jun 15 13:28:12 2011
 
 import Tix as Tk
 import matplotlib
-import importlib
 import sys
 
 # IPython has a wrapper for matplotlib.use to inhibit switching backends.
@@ -244,7 +243,7 @@ class FittingTool(Tk.Toplevel):
                 try:
                     sys.path.insert(0,dirname)
                     modulename=os.path.splitext(modulename)[0]
-                    importlib.import_module(modulename)
+                    exec "import %s"%modulename
                     sys.path.remove(dirname)
                 except:
                     raise
