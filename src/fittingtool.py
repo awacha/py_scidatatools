@@ -385,8 +385,17 @@ class FittingTool(Tk.Toplevel):
             b.grid(row=2,column=0,columnspan=1,sticky='NSEW')
             self.prevargbutton=Tk.Button(self,text='Prev. arg.',command=self.prevargs)
             self.prevargbutton.grid(row=2,column=1,sticky='NSEW')
+            funcfiletypes=[('*.py','Function files (*.py)'),('*','All files (*)')]            
+            loadfcn=FileselectorHelper(self,self.winfo_toplevel().loadfitfunction,'Select a file...',funcfiletypes)
+            b=Tk.Button(self,text="Load functions",command=loadfcn)
+            b.grid(row=3,column=0,columnspan=1,sticky='NSEW')
+            
+            outputfiletypes=[('*.txt','Text files (*.txt)'),('*.dat','Data files (*.dat)'),('*','All files(*)')]
+            savefcn=FileselectorHelper(self,self.savemodel,'Save model...',outputfiletypes)
+            b=Tk.Button(self,text="Save model",command=savefcn)
+            b.grid(row=3,column=1,sticky='NSEW')
             self.fittype=Tk.ComboBox(self)
-            self.fittype.grid(row=3,column=0,columnspan=2,sticky='NSEW')
+            self.fittype.grid(row=4,column=0,columnspan=2,sticky='NSEW')
             self.fittype.insert(Tk.END,'Normal fit')
             self.fittype['value']='Normal'
             #self.fittype.insert(Tk.END,'Scaled params.')
@@ -394,12 +403,8 @@ class FittingTool(Tk.Toplevel):
             #self.fittype.insert(Tk.END,'Transformed dataset')
             self.fitepsilon=ValidatedLabelEntry(self,label='Epsilon:')
             self.fitepsilon.entry.insert(0,'0.0')
-            self.fitepsilon.grid(row=4,column=0,columnspan=2,sticky='NSEW')
+            self.fitepsilon.grid(row=5,column=0,columnspan=2,sticky='NSEW')
 
-            funcfiletypes=[('*.py','Function files (*.py)'),('*','All files (*)')]            
-            loadfcn=FileselectorHelper(self,self.winfo_toplevel().loadfitfunction,'Select a file...',funcfiletypes)
-            b=Tk.Button(self,text="Load functions",command=loadfcn)
-            b.grid(row=5,column=0,columnspan=2,sticky='NSEW')
             self.messagewindow=self.Messagewindow(self)
         def prevargs(self):
             try:
@@ -412,6 +417,19 @@ class FittingTool(Tk.Toplevel):
                 self.prevargbutton.after(1000,dummyfunc)
         def getfittype(self):
             return self.fittype['value'].split()[0]
+        def savemodel(self,filename):
+            x=self.winfo_toplevel().getxscale()
+            if self.getfittype()=='Apparent':
+                # transform the x-scale
+                x=self.winfo_toplevel().gettransform().do_transform(x,x)['x']
+            #evaluate the function in x
+            y=self.winfo_toplevel().fs.evalfunction(x)
+            x=self.winfo_toplevel().getxscale()
+            tmp=np.zeros((len(x),2),np.double)
+            tmp[:,0]=x
+            tmp[:,1]=y
+            np.savetxt(filename,tmp)
+            
         def plotmodel(self):
             # get the standard x-scale (real, not transformed values)
             x=self.winfo_toplevel().getxscale()
@@ -473,7 +491,15 @@ class FittingTool(Tk.Toplevel):
                 for n,v,e in zip(self.winfo_toplevel().fs.getfunction().argument_info,p,pstd):
                     self.winfo_toplevel().log("%s (%s)\t%g\t%g\n"%(n[0],n[1],v,e))
                 self.winfo_toplevel().log("\n")
-                self.winfo_toplevel().log("Message: (%d) %s\n"%(infodict['ier'],infodict['mesg']))
+                self.winfo_toplevel().log("Covariance matrix:\n")
+                cov_x=infodict['cov_x']
+                self.winfo_toplevel().log(str(cov_x))
+                self.winfo_toplevel().log('\n')
+                self.winfo_toplevel().log('Pearson\'s coefficients (r):\n')
+                sigma=np.sqrt(cov_x.diagonal())
+                r=cov_x/np.outer(sigma,sigma)
+                self.winfo_toplevel().log(str(r))
+                self.winfo_toplevel().log("\n\nMessage: (%d) %s\n"%(infodict['ier'],infodict['mesg']))
                 self.winfo_toplevel().log("\n")
                 self.winfo_toplevel().fs.setargs(p,pstd);
                 self.winfo_toplevel().clearfigure()
@@ -495,7 +521,7 @@ class FittingTool(Tk.Toplevel):
             self.frame.rowconfigure(0,weight=1)
             self.text=Tk.ScrolledText(self.frame,height=90,width=1)
             self.text.grid(sticky='NSEW')
-            self.text.text['state']='disabled' #prevent user editing
+            #self.text.text['state']='disabled' #prevent user editing
             self.text.text['width']=30
         def write(self,string):
             self.text.text['state']='normal'

@@ -25,15 +25,13 @@ class DataSet2D(AliasedArrayAttributes,ArithmeticBase):
     
     x is the column coordinate, y is the row (imshow will plot this intuitively).
     """
-    _getorigx=lambda p:p['BeamPosX']
-    _getorigy=lambda p:p['BeamPosY']
-    _getpixelsizex=lambda p:p['PixelSize']
-    _getpixelsizey=lambda p:p['PixelSize']
     def __init__(self,params={},**kwargs):
         ArithmeticBase.__init__(self)
         kwargs['normalnames'] = ['z', 'dz','mask']
         AliasedArrayAttributes.__init__(self, **kwargs)
         self.params=paramstructure.ParamStructure(kwargs)
+        self._origin=[0,0]
+        self._pixelsize=[1,1]
     def copy_into(self,into):
         """Helper function for copy(): make a deep copy,"""
         if not isinstance(into, DataSet2D):
@@ -88,20 +86,6 @@ AliasedVectorAttributes or its subclasses')
             white=np.ones((self._mask.shape[0],self._mask.shape[1],4))
             white[:,:,3]=(-self._mask).astype(np.double)*my_kwargs['maskalpha']
             ax.imshow(white,*args,**kwargs)
-#    def rescale(self,origin,pixelsize,inplace=False):
-#        if not inplace:
-#            obj=self.copy()
-#        else:
-#            obj=self
-#        if np.isscalar(origin):
-#            origin=[origin,0]
-#        if np.isscalar(pixelsize):
-#            pixelsize=[pixelsize]*2
-#        obj._xvec-=origin[0]
-#        obj._yvec-=origin[1]
-#        obj._xvec*=pixelsize[0]
-#        obj._yvec*=pixelsize[1]
-#        return obj
     def sum(self,*args,**kwargs):
         if self.hasfield('_mask'):
             s=(self._z*self._mask.astype(np.uint8)).sum(*args,**kwargs)
@@ -236,8 +220,64 @@ AliasedVectorAttributes or its subclasses')
             my_vars['_mask']=findfilename(maskfilename)
         return cls(**my_vars)
     def get_origin(self):
+        return self._origin
+    def set_origin(self,origvec):
+        self._origin=origvec
+    def set_pixelsize(self,xpix,ypix=None):
+        if ypix is None:
+            ypix=xpix
+        self._pixelsize=[xpix,ypix]
+    def get_origin(self):
         return (self._originx(self.params),self._originy(self.params))
     def get_pixelsize(self):
-        return 
-        raise NotImplementedError
+        return self._pixelsize
+    def get_distance(self):
+        col,row=np.meshgrid(np.arange(self._z.shape[1]),np.arange(self._z.shape[0]))
+        return np.sqrt((row-self._center[0])**2+(col-self._center[1])**2)
+    def findbeam_gravity(self):
+        """Find beam center with the "gravity" method.
+        """
+        print "Finding beam (gravity), please be patient..."
+        # for each row and column find the center of gravity
+        data1=self._z.copy() # take a copy, because elements will be tampered
+                          # with
+        if not self.hasfield('_mask'):
+            mask=np.zeros_like(data1)
+        data1[mask==0]=0 # set masked elements to zero
+
+        x=np.arange(data1.shape[0])
+        y=np.arange(data1.shape[1])
+
+        # two column vectors, both containing ones. The length of onex and
+        # oney corresponds to length of x and y, respectively.
+        onex=np.ones((len(x),1))
+        oney=np.ones((len(y),1))
+        # Multiply the matrix with x. Each element of the resulting column
+        # vector will contain the center of gravity of the corresponding row
+        # in the matrix, multiplied by the "weight". Thus: nix_i=sum_j( A_ij
+        # * x_j). If we divide this by spamx_i=sum_j(A_ij), then we get the
+        # center of gravity. The length of this column vector is len(y).
+        nix=np.dot(data1,x).flatten()
+        spamx=np.dot(data1,onex).flatten()
+        # indices where both nix and spamx is nonzero.
+        goodx=((nix!=0) & (spamx!=0))
+        # trim y, nix and spamx by goodx, eliminate invalid points.
+        nix=nix[goodx]
+        spamx=spamx[goodx]
+
+        # now do the same for the column direction.
+        niy=np.dot(data1.T,y).flatten()
+        spamy=np.dot(data1.T,oney).flatten()
+        goody=((niy!=0) & (spamy!=0))
+        niy=niy[goody]
+        spamy=spamy[goody]
+        # column coordinate of the center in each row will be contained in
+        # ycent, the row coordinate of the center in each column will be
+        # in xcent.
+        ycent=nix/spamx
+        xcent=niy/spamy
+        # return the mean values as the centers.
+        return [xcent.mean()+1,ycent.mean()+1]
+        
+    
         

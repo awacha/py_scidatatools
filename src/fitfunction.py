@@ -28,7 +28,7 @@ Conventions: names for subclasses of FitFunction should start with 'FF'. Names
 """
 
 import numpy as np
-from scipy.special import j1
+from scipy.special import *
 import cfunctions
 
 class FitFunction(object):
@@ -166,6 +166,36 @@ class Transform(object):
         return '<Transform (%s)>'%self.name
 
         
+class FFFloryChain(FitFunction):
+    name="Excluded volume chain"
+    argument_info=[('A','Scaling'),('Rg','Radius of gyration'),
+                   ('nu','Excluded volume parameter')]
+    formula="SASFit manual 6. nov. 2010. Equation (3.60b)"
+    def __call__(self,x,A,Rg,nu):
+        u=x*x*Rg*Rg*(2*nu+1)*(2*nu+2)/6.
+        l=1.0/nu;
+        return A*(np.power(u,0.5/nu)*gamma(0.5/nu)*gammainc(0.5/nu,u)-
+              gamma(1./nu)*gammainc(1./nu,u))/(nu*np.power(u,1/nu));
+#        return A*(np.power(u,0.5/nu)*gamma(0.5/nu)-gamma(1/nu)-
+#              np.power(u,0.5/nu)*gammaincc(0.5/nu,u)*gamma(0.5/nu)+ 
+#            gamma(1/nu)*gammaincc(1/nu,u))/(nu*np.power(u,1/nu));
+
+class FFCorrelatedChain(FitFunction):
+    name="Excluded volume chain with correlation effects"
+    argument_info=[('A','Scaling'),('Rg','Radius of gyration'),
+                   ('nu','Excluded volume parameter'),
+                   ('Rc','Parameter for correlations'),
+                   ('sigma','Cut-off length for correlations'),
+                   ('B','Strength of coupling')]
+    formula="y(x) = A * P(q) / (1 + B * sin(q * Rc) / (q * Rc) * e^(-q^2 * sigma^2);\n\
+P(q) is the scattering function of a single excluded volume Gaussian chain."
+    def __call__(self,x,A,Rg,nu,Rc,sigma,B):
+        u=x*x*Rg*Rg*(2*nu+1)*(2*nu+2)/6.
+        l=1.0/nu;
+        p=(np.power(u,0.5/nu)*gamma(0.5/nu)*gammainc(0.5/nu,u)-
+              gamma(1./nu)*gammainc(1./nu,u))/(nu*np.power(u,1/nu));
+        return A*p/(1+p*B*sinxdivx(x*Rc)*np.exp(-x*x*sigma*sigma));
+    
 class FFLinear(FitFunction):
     name="Linear"
     argument_info=[('a','slope'),('b','offset')]
@@ -174,7 +204,35 @@ class FFLinear(FitFunction):
         FitFunction.__init__(self)
     def __call__(self,x,a,b):
         return a*x+b
- 
+
+class FFCorrelatedRod(FitFunction):
+    name="Rod with correlation"
+    argument_info=[('A','scaling'),('L','rod length'),('Rc','Rc parameter'),('sigma','sigma parameter'),('B','coupling strength')]
+    formula="y(q) = A* P(q,L)/(1+B*sin(q*Rc)/(q*Rc)*exp(-q^2*sigma^2));\nP(q) = L^2*(2/(q*L)*Si(q*L)-sin(q*L/2)/(q*L/2))"
+    def __call__(self,q,A,L,Rc,sigma,B):
+        P=L*L*(2/(q*L)*sici(q*L)[0]-sinc(q*L/2.))
+        return A*P/(1+B*sinc(q*Rc)*exp(-q*q*sigma*sigma)*P)
+
+class FFCorrelatedPowerlaw(FitFunction):
+    name="Power-law with correlation"
+    argument_info=[('A','scaling'),('alpha','exponent'),('Rc','Rc parameter'),('sigma','sigma parameter'),('B','Coupling strength')]
+    formula="y(q) = A*q^-alpha/(1+B*sin(q*Rc)/(q*Rc)*exp(-q^2*sigma^2)*q^-alpha)"
+    def __call__(self,q,A,alpha,Rc,sigma,B):
+        P=np.power(q,alpha)
+        return A*P/(1+B*sinc(q*Rc)*exp(-q*q*sigma*sigma)*P)
+        
+class FFHorkay(FitFunction):
+    name="Horkay et al. J. Chem. Phys. 125 234904 (9)"
+    argument_info=[('F','factor'),
+                   ('L','rod length'),
+                   ('rc','rod radius'),
+                   ('A','factor for the power-law'),
+                   ('s','absolute value of the power-law exponent')]
+    formula="F/(1+q*L)/(1+q^2*rc^2)+A*q^(-s)"
+    def __call__(self,x,F,L,rc,A,s):
+        return F/(1+x*L)/(1+x*x*rc*rc)+A*np.power(x,-s)
+
+
 class FFSine(FitFunction):
     name="Sine"
     argument_info=[('a','amplitude'),('omega','circular frequency'),('phi0','phase'),('y0','offset')]
@@ -194,12 +252,12 @@ class FFGuinier(FitFunction):
         self.qpow=qpow
         if qpow==2:
             self.name="Guinier (thickness)"
-            self.formula="y(x) = G * x^2 * exp(-x^2*Rg^2)"
+            self.formula="y(x) = G * x^(-2) * exp(-x^2*Rg^2)"
         elif qpow==1:
             self.name="Guinier (cross-section)"
-            self.formula="y(x) = G * x * exp(-x^2*Rg^2/2)"
+            self.formula="y(x) = G * x^(-1) * exp(-x^2*Rg^2/2)"
     def __call__(self,x,G,Rg):
-        return G*np.power(x,self.qpow)*np.exp(-x*x*Rg*Rg/(3-self.qpow))
+        return G*np.power(x,-self.qpow)*np.exp(-x*x*Rg*Rg/(3-self.qpow))
 
 class FFPolynomial(FitFunction):
     _factory_arguments=[(2,),(3,)]
@@ -719,7 +777,7 @@ class FFLorentzian(FitFunction):
     def __init__(self):
         FitFunction.__init__(self)
     def __call__(self,x,A,x0,sigma,B):
-        return A/(1+((x-x0)/sigma)^2)+B
+        return A/(1+((x-x0)/sigma)**2)+B
 
 def Fsphere(q,R):
     return 4*np.pi/q**3*(np.sin(q*R)-q*R*np.cos(q*R))
@@ -832,6 +890,63 @@ class FFPorodGuinierPorod(FitFunction):
         y[idxFirstP]=A*np.power(x[idxFirstP],alpha)
         y[idxSecondP]=B*np.power(x[idxSecondP],beta)
         return y
+
+class FFPowerlawPlusGuinierPowerlawPlusCorrelationPeak(FitFunction):
+    name="Power-law + Guinier-Powerlaw + Correlation Peak"
+    formula="I(q)=A*q^(alpha) + (G*exp(-q^2*Rg^2/3) joined smoothly with B*q^beta1)\n+C * exp(-(q-q0)^2/(2*sigma^2))"
+    argument_info=[('A','Scaling factor for the first power-law'),
+                   ('alpha','Exponent of the first power-law'),
+                   ('G','Scaling factor for the Guinier region'),
+                   ('Rg','Radius of gyration'),
+                   ('beta','Second power-law exponent'),
+                   ('C','Scaling for the correlation peak'),
+                   ('q0','Correlation peak position'),
+                   ('sigma','HWHM of the correlation peak')]
+    def __call__(self,x,A,alpha,G,Rg,beta,C,q0,sigma):
+        q1=np.sqrt(3*(-beta)/2.)/Rg
+        y=np.zeros_like(x)
+        B=G*np.exp(beta/2.)*np.power(q1,-beta)
+        idxGuinier=x<q1
+        y[idxGuinier]=G*np.exp(-x[idxGuinier]**2*Rg**2/3.)
+        y[-idxGuinier]=B*np.power(x[-idxGuinier],beta)
+        y+=A*np.power(x,alpha)
+        y+=C*np.exp(-(x-q0)**2/(2*sigma**2));
+        return y
+        
+class FFTwoPorodGuinierPorod(FitFunction):
+    name="Sum of two Porod-Guinier-Porod model"
+    formula="I(q) = A1*q^(alpha1) ; G1*exp(-q^2*Rg1^2/3) ; B1*q^beta1 ; + (the same with 2) smoothly joint"
+    argument_info=[('A1','Scaling'),('alpha1','First power-law exponent'),
+                   ('Rg1','Radius of gyration'),('beta1','Second power-law exponent'),
+                   ('A2','Scaling'),('alpha2','First power-law exponent'),
+                   ('Rg2','Radius of gyration'),('beta2','Second power-law exponent')]
+    def __init__(self):
+        FitFunction.__init__(self)
+    def __call__(self,x,A1,alpha1,Rg1,beta1,A2,alpha2,Rg2,beta2):
+        q1=np.sqrt(3*(-alpha1)/2.)/Rg1
+        q2=np.sqrt(3*(-beta1)/2.)/Rg1
+        y=np.zeros_like(x)
+        G=A1*np.exp(-alpha1/2.)*np.power(q1,alpha1)
+        B=G*np.exp(beta1/2.)*np.power(q2,-beta1)
+        idxFirstP=x<q1
+        idxSecondP=x>q2
+        idxGuinier=(-idxFirstP)&(-idxSecondP)
+        y[idxGuinier]+=G*np.exp(-x[idxGuinier]**2*Rg1**2/3.)
+        y[idxFirstP]+=A1*np.power(x[idxFirstP],alpha1)
+        y[idxSecondP]+=B*np.power(x[idxSecondP],beta1)
+
+        q1=np.sqrt(3*(-alpha2)/2.)/Rg2
+        q2=np.sqrt(3*(-beta2)/2.)/Rg2
+        G=A2*np.exp(-alpha2/2.)*np.power(q1,alpha2)
+        B=G*np.exp(beta2/2.)*np.power(q2,-beta2)
+        idxFirstP=x<q1
+        idxSecondP=x>q2
+        idxGuinier=(-idxFirstP)&(-idxSecondP)
+        y[idxGuinier]+=G*np.exp(-x[idxGuinier]**2*Rg2**2/3.)
+        y[idxFirstP]+=A2*np.power(x[idxFirstP],alpha2)
+        y[idxSecondP]+=B*np.power(x[idxSecondP],beta2)
+
+        return y
         
 class FFLogNormSpherePopulation(FitFunction):
     name="Scattering intensity of a log-normal sphere population"
@@ -859,11 +974,11 @@ class TransformGuinier(Transform):
     def __init__(self,qpower=0):
         self._qpower=qpower
         if qpower==0:
-            self.name='Guinier'
+            self.name='Guinier (ln I vs. q)'
         elif qpower==1:
-            self.name='Guinier cross-section'
+            self.name='Guinier cross-section (ln Iq vs. q)'
         elif qpower==2:
-            self.name='Guinier thickness'
+            self.name='Guinier thickness (ln Iq^2 vs. q)'
     def do_transform(self,x,y,dy=None,dx=None,**kwargs):
         d=kwargs
         d['x']=np.power(x,2)
@@ -908,6 +1023,7 @@ class TransformLogLog(Transform):
                 d['dy']=np.array(dy) # make a copy!
         return d
 
+
 class TransformPorod(Transform):
     name='Porod'
     _factory_arguments=[(4,),(3,)]
@@ -923,6 +1039,23 @@ class TransformPorod(Transform):
         if dx is not None:
             d['dx']=np.power(x,self._exponent-1)*(self._exponent)*dx
         return d
+
+class TransformKratky(Transform):
+    name='Porod'
+    _factory_arguments=[(2,)]
+    def __init__(self,exponent=2):
+        self._exponent=exponent
+        self.name='Kratky (Iq^%s vs. q)'%exponent
+    def do_transform(self,x,y,dy=None,dx=None,**kwargs):
+        d=kwargs
+        d['x']=np.power(x,self._exponent)
+        d['y']=np.power(x,self._exponent)*y
+        if dy is not None:
+            d['dy']=np.power(x,self._exponent)*dy
+        if dx is not None:
+            d['dx']=np.power(x,self._exponent-1)*(self._exponent)*dx
+        return d
+
 
 class TransformShullRoess(Transform):
     name='Shull-Roess'

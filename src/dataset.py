@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+﻿# -*- coding: utf-8 -*-
 """
 Created on Thu Jun 16 10:38:52 2011
 
@@ -304,7 +304,7 @@ AliasedVectorAttributes or its subclasses')
             obj.validate()
         return obj
 
-    def modulus(self, exponent = 0, errorrequested = False):
+    def momentum(self, exponent = 0, errorrequested = False):
         """Calculate moduli (integral from 0 to infinity of y times x^exponent)
         
         Inputs:
